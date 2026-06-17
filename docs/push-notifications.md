@@ -46,7 +46,7 @@ membership amendments, rate changes, etc.).
 |-------|-------|
 | Trigger | `INSERT` on `public.group_events` (`on_group_event_push` trigger) |
 | Recipient | Active group members with push enabled, excluding the actor |
-| Title | `{group name}` (or `"FairShare"` if the group has no name) |
+| Title | `{group name}` (or `"Union"` if the group has no name) |
 | Body | `NEW.summary` from the event row |
 | URL | `/?group={groupUuid}` |
 | Source | [sql/fairshare-schema.sql](../sql/fairshare-schema.sql) 1720–1739 |
@@ -100,19 +100,18 @@ When someone sponsors you into a group via the `offer_group_membership` RPC.
 
 ## 4. Handshake completed — new contact
 
-Sent to the QR/meet issuer when another user completes the handshake. Only
-active if [sql/handshake-push-schema.sql](../sql/handshake-push-schema.sql) has
-been applied; that file replaces the earlier `complete_meet` definition with one
-that pushes.
+Sent to the QR/meet issuer when another user completes the handshake. The
+current `complete_meet(p_token, p_meet_source)` records how the pair met
+(`met_via`) and pushes the issuer.
 
 | Field | Value |
 |-------|-------|
 | Trigger | RPC `complete_meet(p_token, p_meet_source)` after pairing (`p_meet_source` defaults to `URL`; in-app QR scans use `F2F`) |
 | Recipient | The meet issuer (`v_meet_request.user_id`) |
-| Title | `"FairShare"` |
-| Body | `"{name} just joined FairShare via your handshake."` if the newcomer signed up via that token, otherwise `"{name} is now your contact."` |
+| Title | `"Union"` |
+| Body | `"{name} just joined Union via your handshake."` if the newcomer signed up via that token, otherwise `"{name} is now your contact."` |
 | URL | `/?action=view_contact&contact={newContactUuid}` |
-| Source | [sql/handshake-push-schema.sql](../sql/handshake-push-schema.sql) 47–145; optional `p_meet_source` and `contacts.met_via` in [sql/contact-intro-and-met-via-migration.sql](../sql/contact-intro-and-met-via-migration.sql) |
+| Source | `complete_meet(p_token, p_meet_source)` — current definition in [sql/meet-token-reserve-at-signup.sql](../sql/meet-token-reserve-at-signup.sql); `p_meet_source` / `contacts.met_via` introduced in [sql/contact-intro-and-met-via-migration.sql](../sql/contact-intro-and-met-via-migration.sql) |
 
 Also writes a `contact_notifications` row of type `new_contact` for in-app
 display.
@@ -127,7 +126,7 @@ When a contact saves a selfie of the two of you via `add_contact_selfie`.
 |-------|-------|
 | Trigger | RPC `add_contact_selfie(...)` after mirrored selfie rows are inserted |
 | Recipient | The other party (`p_contact_id`) |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `"{name} took a new selfie with you."` |
 | URL | `/?action=view_contact&contact={callerUuid}` |
 | Source | [sql/contact-list-schema.sql](../sql/contact-list-schema.sql) 147–155 |
@@ -144,7 +143,7 @@ Tap opens the intro dialog (`handleNotificationNavigation` in
 |-------|-------|
 | Trigger | RPC `send_contact_intro(p_contact_a, p_contact_b, p_message)` |
 | Recipient | Each of the two parties (`p_contact_a`, `p_contact_b`), excluding the actor |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `"{introducer} wants you to meet {other}"` — `other` is the opposite party for that recipient |
 | URL | `/?action=contact_intro&intro={introUuid}` |
 | Source | [sql/contact-intro-and-met-via-migration.sql](../sql/contact-intro-and-met-via-migration.sql) `send_contact_intro` |
@@ -161,7 +160,7 @@ Fanned out to every user who has the actor in their `contacts` list.
 |-------|-------|
 | Trigger | RPC `notify_contacts_of_profile_picture_change(p_actor_id)`; called from [js/modals.js](../js/modals.js) after a successful upload |
 | Recipient | All users whose `contacts` includes `p_actor_id`, excluding the actor |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `"{name} updated their profile picture"` |
 | URL | `/?action=view_contact&contact={actorUuid}` |
 | Source | [sql/fairshare-schema.sql](../sql/fairshare-schema.sql) 1864–1904 |
@@ -179,7 +178,7 @@ When the user saves a new display name in preferences (`savePreferences` in
 |-------|-------|
 | Trigger | RPC `notify_contacts_of_display_name_change(p_actor_id, p_old_display_name, p_new_display_name)`; called from [js/modals.js](../js/modals.js) after a successful profile update when the trimmed name changed |
 | Recipient | All users whose `contacts` includes `p_actor_id`, excluding the actor |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `"{old} changed their name to {new}"` — empty/whitespace-only old or new side falls back to `"Someone"` |
 | URL | `/?action=view_contact&contact={actorUuid}` |
 | Source | [sql/fairshare-schema.sql](../sql/fairshare-schema.sql) 1948–1998; constraint + one-shot deploy [sql/display-name-change-push-schema.sql](../sql/display-name-change-push-schema.sql) |
@@ -197,7 +196,7 @@ the sponsor share dialog), every user who lists them as a contact is notified.
 |-------|-------|
 | Trigger | RPC `notify_contacts_of_profile_update(p_actor_id, p_message)`; called from [js/modals.js](../js/modals.js) (`persistProfileEmailPhone`, `savePreferences`) |
 | Recipient | All users whose `contacts` includes `p_actor_id`, excluding the actor |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `p_message` (e.g. `"{name} updated their email."`) |
 | URL | `/?action=view_contact&contact={actorUuid}` |
 | Source | [sql/fairshare-schema.sql](../sql/fairshare-schema.sql) 1909–1945 |
@@ -247,7 +246,7 @@ When a contact records the date you two met via `set_first_met_date`.
 |-------|-------|
 | Trigger | RPC `set_first_met_date(p_contact_id, p_met_date)` when `p_met_date` is non-null |
 | Recipient | The contact (`p_contact_id`) |
-| Title | `"FairShare"` |
+| Title | `"Union"` |
 | Body | `"{name} says you met on {formatted date}"` |
 | URL | `/` (no deep link wired — could route to the contact view) |
 | Source | [sql/fairshare-schema.sql](../sql/fairshare-schema.sql) 1952–2002 |

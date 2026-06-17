@@ -145,7 +145,7 @@ BEGIN
   v_push_msg := COALESCE(v_caller_name, 'Someone')
               || CASE
                    WHEN v_is_new_account
-                     THEN ' just joined FairShare via your handshake.'
+                     THEN ' just joined Union via your handshake.'
                    ELSE ' is now your contact.'
                  END;
 
@@ -157,7 +157,7 @@ BEGIN
   PERFORM public.send_push_to_users(
     ARRAY[v_meet_request.user_id],
     v_caller_id,
-    'FairShare',
+    'Union',
     v_push_msg,
     '/?action=view_contact&contact=' || v_caller_id::text
   );

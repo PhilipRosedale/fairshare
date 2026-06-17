@@ -2367,7 +2367,7 @@ begin
   perform public.send_push_to_group(
     NEW.group_id,
     NEW.actor_id,
-    coalesce(v_group_name, 'FairShare'),
+    coalesce(v_group_name, 'Union'),
     NEW.summary,
     '/?group=' || NEW.group_id::text
   );
@@ -2404,7 +2404,7 @@ begin
   perform public.send_push_to_group(
     NEW.group_id,
     NEW.user_id,
-    coalesce(v_group_name, 'FairShare') || ' Chat',
+    coalesce(v_group_name, 'Union') || ' Chat',
     v_body,
     '/?group=' || NEW.group_id::text || '&tab=chat'
   );
@@ -2546,7 +2546,7 @@ begin
   -- tap on the OS notification deep-links straight to that contact's details
   -- screen (via handleNotificationNavigation).
   perform public.send_push_to_users(
-    v_contact_ids, p_actor_id, 'FairShare', v_msg,
+    v_contact_ids, p_actor_id, 'Union', v_msg,
     '/?action=view_contact&contact=' || p_actor_id::text
   );
 end;
@@ -2586,7 +2586,7 @@ begin
   end loop;
 
   perform public.send_push_to_users(
-    v_contact_ids, p_actor_id, 'FairShare', p_message,
+    v_contact_ids, p_actor_id, 'Union', p_message,
     '/?action=view_contact&contact=' || p_actor_id::text
   );
 end;
@@ -2640,7 +2640,7 @@ begin
   end loop;
 
   perform public.send_push_to_users(
-    v_contact_ids, p_actor_id, 'FairShare', v_msg,
+    v_contact_ids, p_actor_id, 'Union', v_msg,
     '/?action=view_contact&contact=' || p_actor_id::text
   );
 end;
@@ -2701,7 +2701,7 @@ begin
   values (p_contact_id, v_caller_id, 'met_date_set', v_msg, jsonb_build_object('met_date', p_met_date));
 
   -- Send Web Push.
-  perform public.send_push_to_users(ARRAY[p_contact_id], v_caller_id, 'FairShare', v_msg);
+  perform public.send_push_to_users(ARRAY[p_contact_id], v_caller_id, 'Union', v_msg);
 end;
 $$ language plpgsql security definer;
 

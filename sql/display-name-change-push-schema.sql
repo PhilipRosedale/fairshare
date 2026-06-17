@@ -2,7 +2,7 @@
 -- lists this user as a contact.
 --
 -- Run in Supabase SQL Editor after migrations that define the current
--- `contact_notifications_notification_type_check` (e.g. handshake-push-schema.sql).
+-- `contact_notifications_notification_type_check` (e.g. contact-intro-and-met-via-migration.sql).
 
 ALTER TABLE public.contact_notifications
   DROP CONSTRAINT IF EXISTS contact_notifications_notification_type_check;
@@ -69,7 +69,7 @@ BEGIN
   PERFORM public.send_push_to_users(
     v_contact_ids,
     p_actor_id,
-    'FairShare',
+    'Union',
     v_msg,
     '/?action=view_contact&contact=' || p_actor_id::text
   );

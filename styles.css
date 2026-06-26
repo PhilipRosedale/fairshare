@@ -2348,6 +2348,10 @@ body.dm-screen-active .main-content {
     min-width: 0;
 }
 
+.contacts-sort-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
 .contacts-sort-btn {
     display: inline-flex;
     align-items: center;
@@ -2362,7 +2366,6 @@ body.dm-screen-active .main-content {
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    flex-shrink: 0;
     transition: border-color 0.15s, background 0.15s;
 }
 .contacts-sort-btn:hover {
@@ -2377,10 +2380,52 @@ body.dm-screen-active .main-content {
     display: inline-flex;
     align-items: center;
     opacity: 0.6;
+    transition: transform 0.15s;
+}
+.contacts-sort-btn.active .contacts-sort-arrow {
+    transform: rotate(180deg);
 }
 .contacts-sort-arrow svg.lucide-icon {
     width: 14px;
     height: 14px;
+}
+.contacts-sort-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 100%;
+    background: var(--white);
+    color: var(--text-color);
+    border: 1px solid var(--medium-gray);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+    overflow: hidden;
+    z-index: 20;
+}
+.contacts-sort-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.65rem 0.85rem;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: inherit;
+    cursor: pointer;
+}
+.contacts-sort-option:hover,
+.contacts-sort-option:focus-visible {
+    background: var(--light-gray);
+    outline: none;
+}
+.contacts-sort-option + .contacts-sort-option {
+    border-top: 1px solid var(--light-gray);
+}
+.contacts-sort-option.selected {
+    color: var(--primary-color);
+    background: rgba(58, 124, 165, 0.08);
 }
 .contacts-search-icon {
     position: absolute;

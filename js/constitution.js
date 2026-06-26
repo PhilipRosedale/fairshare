@@ -46,11 +46,86 @@ function wordDiff(oldText, newText) {
     }).join('');
 }
 
-// Render constitution text with highlighted tags
+const CONSTITUTION_TAG_RE = /\s*\$([A-Z_]+)/g;
+
+function stripConstitutionTags(text) {
+    if (!text) return '';
+    return text.replace(CONSTITUTION_TAG_RE, '');
+}
+
+function getConstitutionTagAnchor(beforeTagStripped) {
+    const labelMatch = beforeTagStripped.match(/([^\n]*:\s*)$/);
+    if (labelMatch) return labelMatch[1];
+    const periodMatch = beforeTagStripped.match(/([\s\S]*?\bperiod of\s*)$/i);
+    if (periodMatch) return periodMatch[1];
+    return beforeTagStripped.slice(Math.max(0, beforeTagStripped.length - 40));
+}
+
+function findConstitutionTagInsertAt(text, valueStart, tagName) {
+    let end = text.length;
+    const commaWith = text.indexOf(', with', valueStart);
+    if (commaWith !== -1) end = Math.min(end, commaWith);
+    const commaAnd = text.indexOf(', and', valueStart);
+    if (commaAnd !== -1) end = Math.min(end, commaAnd);
+    const lineEnd = text.indexOf('\n', valueStart);
+    if (lineEnd !== -1) end = Math.min(end, lineEnd);
+    if (tagName.includes('PERCENTAGE') || tagName.includes('CURRENCY')) {
+        const ofMember = text.indexOf(' of member', valueStart);
+        if (ofMember !== -1) end = Math.min(end, ofMember);
+    }
+    if (tagName === 'VOTING_PERIOD_DAYS') {
+        const comma = text.indexOf(',', valueStart);
+        if (comma !== -1) end = Math.min(end, comma);
+    }
+    return end;
+}
+
+// Re-insert machine-readable $TAG identifiers before saving edited display text.
+function restoreConstitutionTags(displayText, templateText) {
+    const display = displayText ?? '';
+    if (!templateText) return display;
+
+    const tagMatches = [...templateText.matchAll(CONSTITUTION_TAG_RE)];
+    if (tagMatches.length === 0) return display;
+
+    let probe = display;
+    let hasAllTags = true;
+    for (const tm of tagMatches) {
+        const idx = probe.indexOf(tm[0]);
+        if (idx === -1) {
+            hasAllTags = false;
+            break;
+        }
+        probe = probe.slice(idx + tm[0].length);
+    }
+    if (hasAllTags) return display;
+
+    let text = stripConstitutionTags(display);
+    for (let i = tagMatches.length - 1; i >= 0; i--) {
+        const tm = tagMatches[i];
+        if (text.includes(tm[0])) continue;
+
+        const before = stripConstitutionTags(templateText.slice(0, tm.index));
+        const exactPos = text.indexOf(before);
+        if (exactPos !== -1) {
+            const insertAt = exactPos + before.length;
+            text = text.slice(0, insertAt) + tm[0] + text.slice(insertAt);
+            continue;
+        }
+
+        const anchor = getConstitutionTagAnchor(before);
+        const anchorPos = text.indexOf(anchor);
+        if (anchorPos === -1) continue;
+        const insertAt = findConstitutionTagInsertAt(text, anchorPos + anchor.length, tm[1]);
+        text = text.slice(0, insertAt) + tm[0] + text.slice(insertAt);
+    }
+    return text;
+}
+
+// Render constitution text for display (hide machine-readable $TAG identifiers)
 function renderConstitution(text) {
     if (!text) return '<em style="color:var(--dark-gray);">No constitution yet.</em>';
-    return esc(text).replace(/\$([A-Z_]+)/g,
-        '<span class="tag">$$$1</span>');
+    return esc(stripConstitutionTags(text));
 }
 
 // Parse $AMENDMENT_PERCENTAGE from constitution text (returns 0-1)
@@ -495,7 +570,10 @@ function renderAmendmentCard(a, votesMap, myVotesMap, activeMemberCount) {
     const isExpired = expires <= now;
     const timeLeft = isExpired ? 'Expired' : formatTimeLeft(expires - now);
 
-    let diffHtml = wordDiff(a.old_text || '', a.new_text || '');
+    let diffHtml = wordDiff(
+        stripConstitutionTags(a.old_text || ''),
+        stripConstitutionTags(a.new_text || '')
+    );
 
     let actions = '';
     if (a.status === 'voting') {
@@ -616,23 +694,44 @@ function formatTimeLeft(ms) {
 // Live diff preview in the propose amendment modal
 function updateAmendmentPreview() {
     const oldText = selectedGroup?.constitution || '';
-    const newText = document.getElementById('amendmentEditor').value;
+    const newText = document.getElementById('amendmentEditor')?.value ?? '';
     const preview = document.getElementById('amendmentDiffPreview');
-    if (oldText === newText) {
+    if (!preview) return;
+    const oldDisplay = stripConstitutionTags(oldText);
+    const newDisplay = stripConstitutionTags(newText);
+    if (oldDisplay === newDisplay) {
         preview.innerHTML = '<span style="color:var(--dark-gray);">No changes yet.</span>';
     } else {
-        preview.innerHTML = wordDiff(oldText, newText);
+        preview.innerHTML = wordDiff(oldDisplay, newDisplay);
     }
 }
 
 async function submitAmendment() {
-    if (!selectedGroup) return;
+    if (!selectedGroup) {
+        showToast('No group selected', 'error');
+        return;
+    }
     const title = document.getElementById('amendmentTitle').value.trim();
-    const newText = document.getElementById('amendmentEditor').value;
+    const displayText = document.getElementById('amendmentEditor').value;
     const oldText = selectedGroup.constitution || '';
 
-    if (!title) { showToast('Please enter a title for the amendment', 'error'); return; }
-    if (newText === oldText) { showToast('No changes detected in the constitution', 'error'); return; }
+    if (!title) {
+        showToast('Please enter a title for the amendment', 'error');
+        return;
+    }
+    if (stripConstitutionTags(displayText) === stripConstitutionTags(oldText)) {
+        showToast('No changes detected in the constitution', 'error');
+        return;
+    }
+
+    let newText;
+    try {
+        newText = restoreConstitutionTags(displayText, oldText);
+    } catch (e) {
+        console.error('restoreConstitutionTags failed:', e);
+        showToast('Could not prepare amendment text', 'error');
+        return;
+    }
 
     const threshold = parseAmendmentThreshold(oldText);
     const periodDays = parseVotingPeriodDays(oldText);

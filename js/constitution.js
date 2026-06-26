@@ -48,16 +48,67 @@ function wordDiff(oldText, newText) {
 
 const CONSTITUTION_TAG_RE = /\s*\$([A-Z_]+)/g;
 
+const CONSTITUTION_OF_MEMBER_TAGS = new Set([
+    'NEW_MEMBER_PERCENTAGE',
+    'AMENDMENT_PERCENTAGE',
+    'ACCORD_PERCENTAGE',
+    'CHANGE_CURRENCY_RATES_PERCENTAGE',
+]);
+
+// Label patterns for constitutions that lost machine-readable $TAG markers.
+const CONSTITUTION_TAG_REPAIRS = [
+    { name: 'GROUP_NAME', pattern: /(Group Name:\s*[^\n$]+)(?!\s*\$GROUP_NAME)/i },
+    { name: 'VOTING_PERIOD_DAYS', pattern: /(Voting will happen over a period of \d+\s*days)(?!\s*\$VOTING_PERIOD_DAYS)/i },
+    { name: 'CURRENCY_NAME', pattern: /(Currency Name:\s*[^,\n$]+)(?!\s*\$CURRENCY_NAME)/i },
+    { name: 'CURRENCY_SYMBOL', pattern: /(Currency Symbol:\s*[^,\n$]+)(?!\s*\$CURRENCY_SYMBOL)/i },
+    { name: 'CHANGE_CURRENCY_RATES_PERCENTAGE', pattern: /(Change Currency Rates:\s*\d+%)(?!\s*\$CHANGE_CURRENCY_RATES_PERCENTAGE)/i },
+    { name: 'NEW_MEMBER_PERCENTAGE', pattern: /(To Approve New Member:\s*\d+%)(?!\s*\$NEW_MEMBER_PERCENTAGE)/i },
+    { name: 'AMENDMENT_PERCENTAGE', pattern: /(To Approve Amendment:\s*\d+%)(?!\s*\$AMENDMENT_PERCENTAGE)/i },
+    { name: 'ACCORD_PERCENTAGE', pattern: /(To Approve a proposed accord:\s*\d+%)(?!\s*\$ACCORD_PERCENTAGE)/i },
+];
+
+function normalizeConstitutionText(text) {
+    return (text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
 function stripConstitutionTags(text) {
     if (!text) return '';
-    return text.replace(CONSTITUTION_TAG_RE, '');
+    return normalizeConstitutionText(text).replace(CONSTITUTION_TAG_RE, '');
+}
+
+function getConstitutionTags(text) {
+    return [...normalizeConstitutionText(text).matchAll(CONSTITUTION_TAG_RE)];
+}
+
+function constitutionHasAllTagsInOrder(text, tags) {
+    let probe = normalizeConstitutionText(text);
+    for (const tm of tags) {
+        const idx = probe.indexOf(tm[0]);
+        if (idx === -1) return false;
+        probe = probe.slice(idx + tm[0].length);
+    }
+    return true;
+}
+
+function constitutionHasTag(text, tagName) {
+    return getConstitutionTags(text).some((m) => m[1] === tagName);
+}
+
+function getStablePrefix(text, len = 40) {
+    return stripConstitutionTags(text).slice(0, len);
 }
 
 function getConstitutionTagAnchor(beforeTagStripped) {
-    const labelMatch = beforeTagStripped.match(/([^\n]*:\s*)$/);
-    if (labelMatch) return labelMatch[1];
     const periodMatch = beforeTagStripped.match(/([\s\S]*?\bperiod of\s*)$/i);
     if (periodMatch) return periodMatch[1];
+
+    const lineStart = beforeTagStripped.lastIndexOf('\n') + 1;
+    const line = beforeTagStripped.slice(lineStart);
+    const colonIdx = line.lastIndexOf(':');
+    if (colonIdx !== -1) {
+        return beforeTagStripped.slice(0, lineStart + colonIdx + 1) + ' ';
+    }
+
     return beforeTagStripped.slice(Math.max(0, beforeTagStripped.length - 40));
 }
 
@@ -69,7 +120,7 @@ function findConstitutionTagInsertAt(text, valueStart, tagName) {
     if (commaAnd !== -1) end = Math.min(end, commaAnd);
     const lineEnd = text.indexOf('\n', valueStart);
     if (lineEnd !== -1) end = Math.min(end, lineEnd);
-    if (tagName.includes('PERCENTAGE') || tagName.includes('CURRENCY')) {
+    if (CONSTITUTION_OF_MEMBER_TAGS.has(tagName)) {
         const ofMember = text.indexOf(' of member', valueStart);
         if (ofMember !== -1) end = Math.min(end, ofMember);
     }
@@ -80,46 +131,404 @@ function findConstitutionTagInsertAt(text, valueStart, tagName) {
     return end;
 }
 
+// Re-attach $TAG markers when prose labels exist but tags were lost (e.g. after an earlier bad amendment).
+function repairMissingConstitutionTags(text) {
+    let result = normalizeConstitutionText(text);
+    if (!result) return result;
+
+    for (const { name, pattern } of CONSTITUTION_TAG_REPAIRS) {
+        if (constitutionHasTag(result, name)) continue;
+        result = result.replace(pattern, `$1 $${name}`);
+    }
+
+    return result;
+}
+
+function getAmendmentConstitutionTemplate(group) {
+    return repairMissingConstitutionTags(group?.constitution || '');
+}
+
+// Editable constitution variables — each maps to a $TAG in the stored constitution text.
+const CONSTITUTION_VARIABLE_FIELDS = [
+    {
+        tag: 'GROUP_NAME',
+        label: 'Group name',
+        inputType: 'text',
+        extract(text) {
+            return text.match(/Group Name:\s*([^\n$]+)/i)?.[1]?.trim() ?? '';
+        },
+        apply(text, value) {
+            const v = (value || '').trim();
+            if (!v) return text;
+            return text.replace(/(Group Name:\s*)[^\n$]+(\s*\$GROUP_NAME)/i, `$1${v}$2`);
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?Group Name:\s*)([^\n$]+?)(\s*\$GROUP_NAME)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2].trim() };
+        },
+    },
+    {
+        tag: 'VOTING_PERIOD_DAYS',
+        label: 'Voting period (days)',
+        inputType: 'number',
+        min: 1,
+        max: 365,
+        extract(text) {
+            return text.match(/period of (\d+)\s*days\s*\$VOTING_PERIOD_DAYS/i)?.[1] ?? '';
+        },
+        apply(text, value) {
+            const days = Math.min(365, Math.max(1, parseInt(value, 10) || 1));
+            return text.replace(
+                /(Voting will happen over a period of )\d+(\s*days\s*\$VOTING_PERIOD_DAYS)/i,
+                `$1${days}$2`
+            );
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?period of )(\d+)(\s*days)(\s*\$VOTING_PERIOD_DAYS)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2], textAfter: m[3] };
+        },
+    },
+    {
+        tag: 'CURRENCY_NAME',
+        label: 'Currency name',
+        inputType: 'text',
+        extract(text) {
+            return text.match(/Currency Name:\s*([^,\n$]+)/i)?.[1]?.trim() ?? '';
+        },
+        apply(text, value) {
+            const v = (value || '').trim();
+            if (!v) return text;
+            return text.replace(/(Currency Name:\s*)[^,\n$]+(\s*\$CURRENCY_NAME)/i, `$1${v}$2`);
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?Currency Name:\s*)([^,\n$]+?)(\s*\$CURRENCY_NAME)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2].trim() };
+        },
+    },
+    {
+        tag: 'CURRENCY_SYMBOL',
+        label: 'Currency symbol',
+        inputType: 'text',
+        extract(text) {
+            return text.match(/Currency Symbol:\s*([^,\n$]+)/i)?.[1]?.trim() ?? '';
+        },
+        apply(text, value) {
+            const v = (value || '').trim();
+            if (!v) return text;
+            return text.replace(/(Currency Symbol:\s*)[^,\n$]+(\s*\$CURRENCY_SYMBOL)/i, `$1${v}$2`);
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?Currency Symbol:\s*)([^,\n$]+?)(\s*\$CURRENCY_SYMBOL)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2].trim() };
+        },
+    },
+    {
+        tag: 'CHANGE_CURRENCY_RATES_PERCENTAGE',
+        label: 'Change currency rates (%)',
+        inputType: 'number',
+        min: 1,
+        max: 100,
+        extract(text) {
+            return text.match(/Change Currency Rates:\s*(\d+)%/i)?.[1] ?? '';
+        },
+        apply(text, value) {
+            const n = Math.min(100, Math.max(1, parseInt(value, 10) || 1));
+            return text.replace(
+                /(Change Currency Rates:\s*)\d+%(\s*\$CHANGE_CURRENCY_RATES_PERCENTAGE)/i,
+                `$1${n}%$2`
+            );
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?Change Currency Rates:\s*)(\d+)(%)(\s*\$CHANGE_CURRENCY_RATES_PERCENTAGE)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2], textAfter: m[3] };
+        },
+    },
+    {
+        tag: 'NEW_MEMBER_PERCENTAGE',
+        label: 'Approve new member (%)',
+        inputType: 'number',
+        min: 1,
+        max: 100,
+        extract(text) {
+            return text.match(/To Approve New Member:\s*(\d+)%/i)?.[1] ?? '';
+        },
+        apply(text, value) {
+            const n = Math.min(100, Math.max(1, parseInt(value, 10) || 1));
+            return text.replace(
+                /(To Approve New Member:\s*)\d+%(\s*\$NEW_MEMBER_PERCENTAGE)/i,
+                `$1${n}%$2`
+            );
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?To Approve New Member:\s*)(\d+)(%)(\s*\$NEW_MEMBER_PERCENTAGE)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2], textAfter: m[3] };
+        },
+    },
+    {
+        tag: 'AMENDMENT_PERCENTAGE',
+        label: 'Approve amendment (%)',
+        inputType: 'number',
+        min: 1,
+        max: 100,
+        extract(text) {
+            return text.match(/To Approve Amendment:\s*(\d+)%/i)?.[1] ?? '';
+        },
+        apply(text, value) {
+            const n = Math.min(100, Math.max(1, parseInt(value, 10) || 1));
+            return text.replace(
+                /(To Approve Amendment:\s*)\d+%(\s*\$AMENDMENT_PERCENTAGE)/i,
+                `$1${n}%$2`
+            );
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?To Approve Amendment:\s*)(\d+)(%)(\s*\$AMENDMENT_PERCENTAGE)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2], textAfter: m[3] };
+        },
+    },
+    {
+        tag: 'ACCORD_PERCENTAGE',
+        label: 'Approve accord (%)',
+        inputType: 'number',
+        min: 1,
+        max: 100,
+        extract(text) {
+            return text.match(/To Approve a proposed accord:\s*(\d+)%/i)?.[1] ?? '';
+        },
+        apply(text, value) {
+            const n = Math.min(100, Math.max(1, parseInt(value, 10) || 1));
+            return text.replace(
+                /(To Approve a proposed accord:\s*)\d+%(\s*\$ACCORD_PERCENTAGE)/i,
+                `$1${n}%$2`
+            );
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?To Approve a proposed accord:\s*)(\d+)(%)(\s*\$ACCORD_PERCENTAGE)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2], textAfter: m[3] };
+        },
+    },
+];
+
+function getActiveConstitutionVariableFields(template) {
+    return CONSTITUTION_VARIABLE_FIELDS.filter((f) => constitutionHasTag(template, f.tag));
+}
+
+function buildConstitutionFromVariables(template, values) {
+    let result = normalizeConstitutionText(template);
+    for (const field of CONSTITUTION_VARIABLE_FIELDS) {
+        if (!constitutionHasTag(result, field.tag)) continue;
+        if (values[field.tag] === undefined) continue;
+        result = field.apply(result, values[field.tag]);
+    }
+    return repairMissingConstitutionTags(result);
+}
+
+function splitEditorSegmentFallback(field, rawSlice, tagName, fullText) {
+    const tagSuffix = rawSlice.match(new RegExp(`\\s*\\$${tagName}$`));
+    if (!tagSuffix) return null;
+
+    const withoutTag = rawSlice.slice(0, rawSlice.length - tagSuffix[0].length);
+    const value = String(field.extract(fullText) ?? '');
+
+    if (field.inputType === 'number') {
+        if (tagName === 'VOTING_PERIOD_DAYS') {
+            const daysMatch = withoutTag.match(/^([\s\S]*?)(\d+)(\s*days\s*)$/i);
+            if (daysMatch && daysMatch[2] === value) {
+                return { textBefore: daysMatch[1], value: daysMatch[2], textAfter: daysMatch[3] };
+            }
+        }
+        const pctMatch = withoutTag.match(/^([\s\S]*?)(\d+)(%\s*)$/);
+        if (pctMatch && pctMatch[2] === value) {
+            return { textBefore: pctMatch[1], value: pctMatch[2], textAfter: pctMatch[3] };
+        }
+    }
+
+    if (value && withoutTag.endsWith(value)) {
+        return { textBefore: withoutTag.slice(0, withoutTag.length - value.length), value };
+    }
+
+    const idx = withoutTag.lastIndexOf(value);
+    if (value && idx !== -1) {
+        return {
+            textBefore: withoutTag.slice(0, idx),
+            value,
+            textAfter: withoutTag.slice(idx + value.length) || undefined,
+        };
+    }
+
+    return null;
+}
+
+function parseConstitutionEditorSegments(text) {
+    const normalized = normalizeConstitutionText(text);
+    const tagMatches = getConstitutionTags(normalized);
+    const segments = [];
+    let cursor = 0;
+
+    for (const tm of tagMatches) {
+        const tagEnd = tm.index + tm[0].length;
+        const rawSlice = normalized.slice(cursor, tagEnd);
+        const field = CONSTITUTION_VARIABLE_FIELDS.find((f) => f.tag === tm[1]);
+
+        if (field) {
+            const parts = field.splitEditorSegment?.(rawSlice)
+                || splitEditorSegmentFallback(field, rawSlice, tm[1], normalized);
+            if (parts) {
+                if (parts.textBefore) segments.push({ type: 'text', content: parts.textBefore });
+                segments.push({
+                    type: 'var',
+                    tag: field.tag,
+                    value: parts.value,
+                    inputType: field.inputType,
+                    min: field.min,
+                    max: field.max,
+                });
+                if (parts.textAfter) segments.push({ type: 'text', content: parts.textAfter });
+            } else {
+                segments.push({ type: 'text', content: stripConstitutionTags(rawSlice) });
+            }
+        } else {
+            segments.push({ type: 'text', content: stripConstitutionTags(rawSlice) });
+        }
+        cursor = tagEnd;
+    }
+
+    if (cursor < normalized.length) {
+        segments.push({ type: 'text', content: normalized.slice(cursor) });
+    }
+
+    if (segments.length === 0) {
+        segments.push({ type: 'text', content: stripConstitutionTags(normalized) });
+    }
+
+    return segments;
+}
+
+function constitutionVarInputSize(value, inputType) {
+    const len = String(value ?? '').length;
+    const min = 2;
+    const max = inputType === 'number' ? 4 : 48;
+    return Math.min(max, Math.max(min, len + 1));
+}
+
+function resizeConstitutionVarInput(input) {
+    if (!input) return;
+    const type = input.type === 'number' ? 'number' : 'text';
+    input.size = constitutionVarInputSize(input.value, type);
+}
+
+function resizeConstitutionVarInputs(root) {
+    root?.querySelectorAll('.constitution-var-input').forEach(resizeConstitutionVarInput);
+}
+
+function renderAmendmentConstitutionEditorHTML(template) {
+    return parseConstitutionEditorSegments(template).map((seg) => {
+        if (seg.type === 'text') {
+            return `<span class="constitution-prose" contenteditable="true">${esc(seg.content)}</span>`;
+        }
+        const min = seg.min != null ? ` min="${seg.min}"` : '';
+        const max = seg.max != null ? ` max="${seg.max}"` : '';
+        const type = seg.inputType || 'text';
+        const size = constitutionVarInputSize(seg.value, type);
+        return `<input type="${type}" class="tag constitution-var-input" data-constitution-var="${seg.tag}" title="$${seg.tag}" value="${esc(String(seg.value ?? ''))}" size="${size}"${min}${max}>`;
+    }).join('');
+}
+
+function getAmendmentEditorDisplayText() {
+    const editor = document.getElementById('amendmentConstitutionEditor');
+    if (!editor) return '';
+    let out = '';
+    for (const el of editor.children) {
+        if (el.classList.contains('constitution-prose')) {
+            out += el.textContent;
+        } else if (el.dataset.constitutionVar) {
+            out += el.value;
+        }
+    }
+    return out;
+}
+
+function getAmendmentEditorVariableValues() {
+    const values = {};
+    document.querySelectorAll('#amendmentConstitutionEditor [data-constitution-var]').forEach((input) => {
+        values[input.dataset.constitutionVar] = input.value.trim();
+    });
+    return values;
+}
+
+function initAmendmentConstitutionEditor(group) {
+    const template = getAmendmentConstitutionTemplate(group);
+    const editor = document.getElementById('amendmentConstitutionEditor');
+    if (!editor) return;
+    editor.innerHTML = renderAmendmentConstitutionEditorHTML(template);
+    resizeConstitutionVarInputs(editor);
+    editor.addEventListener('input', (e) => {
+        if (e.target.classList?.contains('constitution-var-input')) {
+            resizeConstitutionVarInput(e.target);
+        }
+        updateAmendmentPreview();
+    });
+    updateAmendmentPreview();
+}
+
+function buildAmendmentConstitutionText(group) {
+    const template = getAmendmentConstitutionTemplate(group);
+    const displayText = getAmendmentEditorDisplayText();
+    return restoreConstitutionTags(displayText, template);
+}
+
 // Re-insert machine-readable $TAG identifiers before saving edited display text.
 function restoreConstitutionTags(displayText, templateText) {
-    const display = displayText ?? '';
-    if (!templateText) return display;
+    const display = normalizeConstitutionText(displayText);
+    const template = normalizeConstitutionText(templateText);
+    if (!template) return display;
 
-    const tagMatches = [...templateText.matchAll(CONSTITUTION_TAG_RE)];
+    const tagMatches = getConstitutionTags(template);
     if (tagMatches.length === 0) return display;
+    if (constitutionHasAllTagsInOrder(display, tagMatches)) return display;
 
-    let probe = display;
-    let hasAllTags = true;
-    for (const tm of tagMatches) {
-        const idx = probe.indexOf(tm[0]);
-        if (idx === -1) {
-            hasAllTags = false;
-            break;
-        }
-        probe = probe.slice(idx + tm[0].length);
-    }
-    if (hasAllTags) return display;
+    const text = stripConstitutionTags(display);
+    let result = '';
+    let cursor = 0;
 
-    let text = stripConstitutionTags(display);
-    for (let i = tagMatches.length - 1; i >= 0; i--) {
+    for (let i = 0; i < tagMatches.length; i++) {
         const tm = tagMatches[i];
-        if (text.includes(tm[0])) continue;
+        const prevEnd = i === 0 ? 0 : tagMatches[i - 1].index + tagMatches[i - 1][0].length;
+        const segBefore = stripConstitutionTags(template.slice(prevEnd, tm.index));
+        const nextStart = tm.index + tm[0].length;
+        const nextEnd = i + 1 < tagMatches.length ? tagMatches[i + 1].index : template.length;
+        const segAfter = stripConstitutionTags(template.slice(nextStart, nextEnd));
 
-        const before = stripConstitutionTags(templateText.slice(0, tm.index));
-        const exactPos = text.indexOf(before);
-        if (exactPos !== -1) {
-            const insertAt = exactPos + before.length;
-            text = text.slice(0, insertAt) + tm[0] + text.slice(insertAt);
-            continue;
+        let insertAt = text.length;
+        const nextPrefix = getStablePrefix(segAfter, 40);
+        if (nextPrefix.length >= 8) {
+            const nextPos = text.indexOf(nextPrefix, cursor);
+            if (nextPos !== -1) insertAt = nextPos;
         }
 
-        const anchor = getConstitutionTagAnchor(before);
-        const anchorPos = text.indexOf(anchor);
-        if (anchorPos === -1) continue;
-        const insertAt = findConstitutionTagInsertAt(text, anchorPos + anchor.length, tm[1]);
-        text = text.slice(0, insertAt) + tm[0] + text.slice(insertAt);
+        if (insertAt === text.length) {
+            const anchor = getConstitutionTagAnchor(segBefore);
+            const anchorPos = text.indexOf(anchor, cursor);
+            if (anchorPos !== -1) {
+                insertAt = findConstitutionTagInsertAt(text, anchorPos + anchor.length, tm[1]);
+            }
+        }
+
+        if (insertAt < cursor) insertAt = cursor;
+        result += text.slice(cursor, insertAt);
+        result += tm[0];
+        cursor = insertAt;
     }
-    return text;
+
+    result += text.slice(cursor);
+    return result;
 }
 
 // Render constitution text for display (hide machine-readable $TAG identifiers)
@@ -398,7 +807,7 @@ async function loadConstitutionContent() {
             return;
         }
         if (freshGroup) {
-            selectedGroup = freshGroup;   // safe: we checked generation
+            syncSelectedGroup(freshGroup);
         }
 
         const constitutionHtml = `<div class="constitution-text">${renderConstitution(selectedGroup.constitution)}</div>`;
@@ -693,16 +1102,16 @@ function formatTimeLeft(ms) {
 
 // Live diff preview in the propose amendment modal
 function updateAmendmentPreview() {
-    const oldText = selectedGroup?.constitution || '';
-    const newText = document.getElementById('amendmentEditor')?.value ?? '';
+    if (!selectedGroup) return;
+    const oldText = repairMissingConstitutionTags(selectedGroup.constitution || '');
+    const displayText = getAmendmentEditorDisplayText();
     const preview = document.getElementById('amendmentDiffPreview');
     if (!preview) return;
     const oldDisplay = stripConstitutionTags(oldText);
-    const newDisplay = stripConstitutionTags(newText);
-    if (oldDisplay === newDisplay) {
+    if (oldDisplay === displayText) {
         preview.innerHTML = '<span style="color:var(--dark-gray);">No changes yet.</span>';
     } else {
-        preview.innerHTML = wordDiff(oldDisplay, newDisplay);
+        preview.innerHTML = wordDiff(oldDisplay, displayText);
     }
 }
 
@@ -712,35 +1121,58 @@ async function submitAmendment() {
         return;
     }
     const title = document.getElementById('amendmentTitle').value.trim();
-    const displayText = document.getElementById('amendmentEditor').value;
-    const oldText = selectedGroup.constitution || '';
+    const constitutionAtProposal = selectedGroup.constitution || '';
+    const templateText = getAmendmentConstitutionTemplate(selectedGroup);
+    const displayText = getAmendmentEditorDisplayText();
+    const values = getAmendmentEditorVariableValues();
 
     if (!title) {
         showToast('Please enter a title for the amendment', 'error');
         return;
     }
-    if (stripConstitutionTags(displayText) === stripConstitutionTags(oldText)) {
-        showToast('No changes detected in the constitution', 'error');
-        return;
+
+    const activeFields = getActiveConstitutionVariableFields(templateText);
+    for (const field of activeFields) {
+        if (field.tag === 'GROUP_NAME' && !values.GROUP_NAME) {
+            showToast('Please enter a group name', 'error');
+            return;
+        }
+        if (field.inputType === 'number' && values[field.tag] !== '' && !Number.isFinite(Number(values[field.tag]))) {
+            showToast(`Please enter a valid number for ${field.label}`, 'error');
+            return;
+        }
     }
 
     let newText;
     try {
-        newText = restoreConstitutionTags(displayText, oldText);
-    } catch (e) {
-        console.error('restoreConstitutionTags failed:', e);
+        newText = restoreConstitutionTags(displayText, templateText);
+        newText = buildConstitutionFromVariables(newText, values);
+    } catch (err) {
+        console.error('restoreConstitutionTags failed:', err);
+        showToast('Could not prepare amendment text', 'error');
+        return;
+    }
+    if (stripConstitutionTags(newText) === stripConstitutionTags(repairMissingConstitutionTags(constitutionAtProposal))) {
+        showToast('No changes detected in the constitution', 'error');
+        return;
+    }
+
+    const templateTagNames = getConstitutionTags(templateText).map((m) => m[1]);
+    const missingTagNames = templateTagNames.filter((name) => !constitutionHasTag(newText, name));
+    if (missingTagNames.length > 0) {
+        console.error('Missing constitution tags after build:', missingTagNames);
         showToast('Could not prepare amendment text', 'error');
         return;
     }
 
-    const threshold = parseAmendmentThreshold(oldText);
-    const periodDays = parseVotingPeriodDays(oldText);
+    const threshold = parseAmendmentThreshold(constitutionAtProposal);
+    const periodDays = parseVotingPeriodDays(constitutionAtProposal);
 
     const amendmentRow = {
         group_id: selectedGroup.id,
         proposed_by: currentUser.id,
         title,
-        old_text: oldText,
+        old_text: constitutionAtProposal,
         new_text: newText,
         threshold
     };
@@ -822,14 +1254,8 @@ async function voteAmendment(amendmentId, approve) {
                 ? `${data.approve_count}/${data.voter_count} voted`
                 : `${data.approve_count}/${data.active_members} approved`;
             showToast(`Amendment passed! (${tally}, ${data.ratio}% ≥ ${data.threshold}% needed)`, 'success');
-            // Refresh group data since constitution may have changed
             const { data: freshGroup } = await db.from('groups').select('*').eq('id', selectedGroup.id).single();
-            if (freshGroup) {
-                selectedGroup = freshGroup;
-                const membership = myGroups.find(m => m.group_id === selectedGroup.id);
-                if (membership) membership.groups = freshGroup;
-                renderGroupList();
-            }
+            if (freshGroup) syncSelectedGroup(freshGroup);
             await loadConstitutionContent();
             return;
         }
@@ -882,12 +1308,7 @@ async function resolveAmendment(amendmentId) {
             : `${data.approve_count}/${data.active_members} approved`;
         showToast(`Amendment passed! (${tally}, ${data.ratio}% ≥ ${data.threshold}% needed)`, 'success');
         const { data: freshGroup } = await db.from('groups').select('*').eq('id', selectedGroup.id).single();
-        if (freshGroup) {
-            selectedGroup = freshGroup;
-            const membership = myGroups.find(m => m.group_id === selectedGroup.id);
-            if (membership) membership.groups = freshGroup;
-            renderGroupList();
-        }
+        if (freshGroup) syncSelectedGroup(freshGroup);
     } else {
         const tally = data.voting_period && data.voter_count != null
             ? `${data.approve_count}/${data.voter_count} voted`

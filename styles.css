@@ -615,6 +615,10 @@ body {
     margin-bottom: 0.3rem;
     color: var(--accent-color);
 }
+.required-marker {
+    color: var(--red);
+    margin-right: 0.15rem;
+}
 .form-group input, .form-group select, .form-group textarea {
     width: 100%;
     padding: 0.6rem 0.8rem;
@@ -1950,6 +1954,57 @@ body.dm-screen-active .main-content {
     padding: 0.1rem 0.4rem;
     border-radius: 4px;
     margin-left: 0.3rem;
+}
+.constitution-editor {
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    padding: 1rem;
+    background: var(--light-gray);
+    border-radius: 6px;
+    border: 1px solid var(--medium-gray);
+    min-height: 12rem;
+    max-height: 20rem;
+    overflow-y: auto;
+}
+.constitution-editor .constitution-prose {
+    outline: none;
+}
+.constitution-editor .constitution-var-input {
+    background: #e3f0f8;
+    color: var(--primary-color);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    margin: 0 0.15rem;
+    vertical-align: baseline;
+    field-sizing: content;
+    width: auto;
+    min-width: 0;
+    box-sizing: content-box;
+    cursor: text;
+}
+.constitution-editor .constitution-var-input:hover {
+    border-color: #b8d4e8;
+}
+.constitution-editor .constitution-var-input:focus {
+    border-color: var(--primary-color);
+    outline: none;
+}
+.amendment-section-label {
+    color: var(--accent-color);
+    font-size: 0.95rem;
+    margin: 0.25rem 0 0.35rem;
+}
+.amendment-section-hint {
+    color: var(--dark-gray);
+    font-size: 0.85rem;
+    margin: 0 0 0.75rem;
+    line-height: 1.45;
 }
 .diff-display {
     font-family: 'Inter', sans-serif;

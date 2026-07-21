@@ -10,6 +10,9 @@ async function loadMyGroups(autoNavigateGroupId) {
 
     if (error) { showToast('Failed to load groups', 'error'); return; }
     myGroups = data || [];
+    myGroups.forEach(m => {
+        if (m.groups) m.groups = syncGroupInMyGroups(m.groups);
+    });
 
     // Fetch member counts for each group
     const groupIds = myGroups.map(m => m.group_id);
@@ -61,24 +64,27 @@ function renderGroupList() {
         return;
     }
     hint.classList.add('hidden');
-    el.innerHTML = myGroups.map(m => `
+    el.innerHTML = myGroups.map(m => {
+        const groupName = getGroupDisplayName(m.groups);
+        return `
         <div class="group-card" onclick="selectGroupById('${m.group_id}')">
             <div class="group-card-main">
-                ${renderGroupCardLogo(m.groups.logo_url, m.groups.name, m.groups.logo_updated_at)}
+                ${renderGroupCardLogo(m.groups.logo_url, groupName, m.groups.logo_updated_at)}
                 <div>
                 <div class="group-card-name">
-                    ${esc(m.groups.name)}
+                    ${esc(groupName)}
                     ${m.status === 'pending' ? '<span class="group-card-status">pending</span>' : ''}
                 </div>
                 <div class="group-card-meta">${m._memberCount || 0} member${m._memberCount === 1 ? '' : 's'}</div>
                 </div>
             </div>
             <div class="group-card-actions">
-                <button class="btn-leave-group" onclick="leaveGroup('${m.group_id}', '${esc(m.groups.name)}', event)" title="Leave group">Leave</button>
+                <button class="btn-leave-group" onclick="leaveGroup('${m.group_id}', '${esc(groupName)}', event)" title="Leave group">Leave</button>
                 <span class="group-card-arrow">›</span>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
 }
 
@@ -113,6 +119,34 @@ function updateGroupTabBar(group) {
     if (!currencyOn && activeTab === 'money') activeTab = 'members';
 }
 
+function getGroupDisplayName(group) {
+    if (!group) return '';
+    const constitution = group.constitution || '';
+    const tagged = constitution.match(/Group Name:\s*([^\n$]+?)\s*\$GROUP_NAME/i);
+    if (tagged?.[1]?.trim()) return tagged[1].trim();
+    const labeled = constitution.match(/Group Name:\s*([^\n$]+)/i);
+    if (labeled?.[1]?.trim()) return labeled[1].trim();
+    return group.name || '';
+}
+
+function syncGroupInMyGroups(groupData) {
+    if (!groupData?.id) return groupData;
+    const displayName = getGroupDisplayName(groupData);
+    const syncedGroup = displayName ? { ...groupData, name: displayName } : groupData;
+    const membership = myGroups.find(m => m.group_id === syncedGroup.id);
+    if (membership) membership.groups = syncedGroup;
+    if (selectedGroup?.id === syncedGroup.id) selectedGroup = syncedGroup;
+    return syncedGroup;
+}
+
+function syncSelectedGroup(freshGroup) {
+    if (!freshGroup || !selectedGroup || freshGroup.id !== selectedGroup.id) return;
+    const syncedGroup = syncGroupInMyGroups(freshGroup);
+    const nameEl = document.getElementById('groupNameDisplay');
+    if (nameEl) nameEl.textContent = syncedGroup.name;
+    renderGroupList();
+}
+
 function selectGroupById(groupId) {
     const membership = myGroups.find(m => m.group_id === groupId);
     if (membership) selectGroup(membership.groups, membership);
@@ -133,7 +167,7 @@ async function selectGroup(group, membership) {
     subscribeToGroup(group.id);
 
     // Show group name at top
-    document.getElementById('groupNameDisplay').textContent = group.name;
+    document.getElementById('groupNameDisplay').textContent = getGroupDisplayName(group);
     setGroupAvatar(group.logo_url || null, group.logo_updated_at);
     bindGroupLogoInput();
     updateGroupLogoControl(membership?.status === 'active');

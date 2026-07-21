@@ -54,29 +54,88 @@ function bindContactsSearchInput() {
     input.dataset.bound = '1';
 }
 
+const CONTACTS_SORT_OPTIONS = [
+    { mode: 'recent', label: 'Met' },
+    { mode: 'age', label: 'Known' },
+    { mode: 'trust', label: 'Trust' },
+    { mode: 'custom', label: 'Custom' },
+];
+
+function getContactsSortOption(mode) {
+    return CONTACTS_SORT_OPTIONS.find((o) => o.mode === mode) || CONTACTS_SORT_OPTIONS[2];
+}
+
+function setContactsSortMode(mode) {
+    if (mode !== 'recent' && mode !== 'age' && mode !== 'trust' && mode !== 'custom') return;
+    if (contactsSortMode === mode) return;
+    contactsSortMode = mode;
+    updateSortLabel();
+    scheduleSortPrefsSave();
+    renderContactsForCurrentQuery();
+}
+
+function closeContactsSortMenu() {
+    const menu = document.getElementById('contactsSortMenu');
+    const btn = document.getElementById('contactsSortBtn');
+    if (menu) menu.classList.add('hidden');
+    if (btn) {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-expanded', 'false');
+    }
+    document.removeEventListener('click', closeContactsSortMenuOnOutsideClick);
+}
+
+function closeContactsSortMenuOnOutsideClick(e) {
+    const wrap = document.querySelector('.contacts-sort-wrap');
+    if (wrap && wrap.contains(e.target)) return;
+    closeContactsSortMenu();
+}
+
+function toggleContactsSortMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('contactsSortMenu');
+    const btn = document.getElementById('contactsSortBtn');
+    if (!menu) return;
+    if (menu.classList.contains('hidden')) {
+        menu.classList.remove('hidden');
+        if (btn) {
+            btn.classList.add('active');
+            btn.setAttribute('aria-expanded', 'true');
+        }
+        setTimeout(() => {
+            document.addEventListener('click', closeContactsSortMenuOnOutsideClick);
+        }, 0);
+    } else {
+        closeContactsSortMenu();
+    }
+}
+
 function bindContactsSortButton() {
     const btn = document.getElementById('contactsSortBtn');
-    const label = document.getElementById('contactsSortLabel');
+    const menu = document.getElementById('contactsSortMenu');
     if (!btn || btn.dataset.bound === '1') return;
-    btn.addEventListener('click', () => {
-        if (contactsSortMode === 'recent') contactsSortMode = 'age';
-        else if (contactsSortMode === 'age') contactsSortMode = 'trust';
-        else if (contactsSortMode === 'trust') contactsSortMode = 'custom';
-        else contactsSortMode = 'recent';
-        updateSortLabel();
-        scheduleSortPrefsSave();
-        renderContactsForCurrentQuery();
-    });
+    btn.addEventListener('click', toggleContactsSortMenu);
+    if (menu) {
+        menu.querySelectorAll('.contacts-sort-option').forEach((option) => {
+            option.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closeContactsSortMenu();
+                setContactsSortMode(option.dataset.sortMode);
+            });
+        });
+    }
     btn.dataset.bound = '1';
 }
 
 function updateSortLabel() {
     const label = document.getElementById('contactsSortLabel');
-    if (!label) return;
-    if (contactsSortMode === 'recent') label.textContent = 'Met';
-    else if (contactsSortMode === 'age') label.textContent = 'Known';
-    else if (contactsSortMode === 'trust') label.textContent = 'Trust';
-    else label.textContent = 'Custom';
+    const opt = getContactsSortOption(contactsSortMode);
+    if (label) label.textContent = opt.label;
+    document.querySelectorAll('.contacts-sort-option').forEach((btn) => {
+        const selected = btn.dataset.sortMode === contactsSortMode;
+        btn.classList.toggle('selected', selected);
+        btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
 }
 
 function getCustomOrderKey() {

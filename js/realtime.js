@@ -140,12 +140,7 @@ async function handleGroupEvent(event) {
             // Amendment pass may have changed group settings
             if (event.event_type === 'amendment_passed') {
                 const { data: freshGroup } = await db.from('groups').select('*').eq('id', selectedGroup.id).single();
-                if (freshGroup) {
-                    selectedGroup = freshGroup;
-                    const membership = myGroups.find(m => m.group_id === selectedGroup.id);
-                    if (membership) membership.groups = freshGroup;
-                    renderGroupList();
-                }
+                if (freshGroup) syncSelectedGroup(freshGroup);
                 if (activeTab === 'money') await renderMoneyTab();
             }
             break;

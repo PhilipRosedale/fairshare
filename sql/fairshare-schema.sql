@@ -1319,6 +1319,10 @@ declare
   v_constitution text;
   v_period_days int;
   v_window_end timestamptz;
+  v_group_name_applied boolean := false;
+  v_currency_name_applied boolean := false;
+  v_currency_symbol_applied boolean := false;
+  v_repaired_text text;
 begin
   -- Fetch the amendment
   select * into v_amendment
@@ -1403,28 +1407,83 @@ begin
   end if;
 
   if v_passed then
+    -- Repair missing $TAG markers in stored constitution (e.g. after earlier bad amendments)
+    v_repaired_text := v_amendment.new_text;
+    if v_repaired_text !~ '\$GROUP_NAME' then
+      v_repaired_text := regexp_replace(v_repaired_text, '(Group Name:\s*[^\n$]+)', '\1 $GROUP_NAME', 'i');
+    end if;
+    if v_repaired_text !~ '\$VOTING_PERIOD_DAYS' then
+      v_repaired_text := regexp_replace(
+        v_repaired_text,
+        '(Voting will happen over a period of \d+\s*days)',
+        '\1 $VOTING_PERIOD_DAYS',
+        'i'
+      );
+    end if;
+    if v_repaired_text !~ '\$CURRENCY_NAME' then
+      v_repaired_text := regexp_replace(v_repaired_text, '(Currency Name:\s*[^,\n$]+)', '\1 $CURRENCY_NAME', 'i');
+    end if;
+    if v_repaired_text !~ '\$CURRENCY_SYMBOL' then
+      v_repaired_text := regexp_replace(v_repaired_text, '(Currency Symbol:\s*[^,\n$]+)', '\1 $CURRENCY_SYMBOL', 'i');
+    end if;
+    if v_repaired_text !~ '\$CHANGE_CURRENCY_RATES_PERCENTAGE' then
+      v_repaired_text := regexp_replace(
+        v_repaired_text,
+        '(Change Currency Rates:\s*\d+%)',
+        '\1 $CHANGE_CURRENCY_RATES_PERCENTAGE',
+        'i'
+      );
+    end if;
+    if v_repaired_text !~ '\$NEW_MEMBER_PERCENTAGE' then
+      v_repaired_text := regexp_replace(
+        v_repaired_text,
+        '(To Approve New Member:\s*\d+%)',
+        '\1 $NEW_MEMBER_PERCENTAGE',
+        'i'
+      );
+    end if;
+    if v_repaired_text !~ '\$AMENDMENT_PERCENTAGE' then
+      v_repaired_text := regexp_replace(
+        v_repaired_text,
+        '(To Approve Amendment:\s*\d+%)',
+        '\1 $AMENDMENT_PERCENTAGE',
+        'i'
+      );
+    end if;
+    if v_repaired_text !~ '\$ACCORD_PERCENTAGE' then
+      v_repaired_text := regexp_replace(
+        v_repaired_text,
+        '(To Approve a proposed accord:\s*\d+%)',
+        '\1 $ACCORD_PERCENTAGE',
+        'i'
+      );
+    end if;
+
     -- Update the constitution
     update public.groups
-    set constitution = v_amendment.new_text
+    set constitution = v_repaired_text
     where id = v_amendment.group_id;
 
-    -- Parse tagged variables from new_text and apply changes
+    -- Parse tagged variables from repaired text and apply changes
     -- Tags appear as $TAG_NAME anywhere in the text (not necessarily at end of line)
     -- The value is everything between the nearest preceding colon and the $TAG
     for v_parts in
       select (m)[1] as val, (m)[2] as tag
-      from regexp_matches(v_amendment.new_text, ':\s*([^:]*?)\s*\$([A-Z_]+)', 'g') as m
+      from regexp_matches(v_repaired_text, ':\s*([^:]*?)\s*\$([A-Z_]+)', 'g') as m
     loop
-      v_value := v_parts.val;
+      v_value := trim(v_parts.val);
       v_tag := v_parts.tag;
 
       case v_tag
         when 'GROUP_NAME' then
           update public.groups set name = v_value where id = v_amendment.group_id;
+          v_group_name_applied := true;
         when 'CURRENCY_NAME' then
           update public.groups set currency_name = v_value where id = v_amendment.group_id;
+          v_currency_name_applied := true;
         when 'CURRENCY_SYMBOL' then
           update public.groups set currency_symbol = v_value where id = v_amendment.group_id;
+          v_currency_symbol_applied := true;
         -- AMENDMENT_PERCENTAGE, NEW_MEMBER_PERCENTAGE, and
         -- CHANGE_CURRENCY_RATES_PERCENTAGE are read from constitution text
         -- at runtime, no separate column to update
@@ -1432,6 +1491,27 @@ begin
           null;
       end case;
     end loop;
+
+    -- Always sync group name from constitution prose (authoritative after amendments)
+    select trim((regexp_match(v_repaired_text, 'Group Name:\s*([^\n$]+)', 'i'))[1]) into v_value;
+    if v_value is not null and v_value <> '' then
+      update public.groups set name = v_value where id = v_amendment.group_id;
+      v_group_name_applied := true;
+    end if;
+
+    if not v_currency_name_applied then
+      select trim((regexp_match(v_repaired_text, 'Currency Name:\s*([^,\n$]+)', 'i'))[1]) into v_value;
+      if v_value is not null and v_value <> '' then
+        update public.groups set currency_name = v_value where id = v_amendment.group_id;
+      end if;
+    end if;
+
+    if not v_currency_symbol_applied then
+      select trim((regexp_match(v_repaired_text, 'Currency Symbol:\s*([^,\n$]+)', 'i'))[1]) into v_value;
+      if v_value is not null and v_value <> '' then
+        update public.groups set currency_symbol = v_value where id = v_amendment.group_id;
+      end if;
+    end if;
 
     -- Mark as passed
     update public.amendments

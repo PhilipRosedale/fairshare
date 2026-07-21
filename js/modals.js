@@ -243,13 +243,13 @@ function showModal(type) {
             body.innerHTML = `
                 <h3>Propose Constitutional Amendment</h3>
                 <div class="form-group">
-                    <label>Title (short summary)</label>
-                    <input type="text" id="amendmentTitle" required placeholder="e.g. Lower amendment threshold to 75%">
+                    <label><span class="required-marker">*</span> Title (short summary)</label>
+                    <input type="text" id="amendmentTitle" required placeholder="e.g. Rename group to East Bay Local">
                 </div>
                 <div class="form-group">
-                    <label>Edit the constitution below</label>
-                    <textarea id="amendmentEditor" rows="8" style="font-family:monospace;font-size:16px;line-height:1.6;"
-                        oninput="updateAmendmentPreview()">${esc(selectedGroup?.constitution || '')}</textarea>
+                    <label><span class="required-marker">*</span> Edit the constitution below</label>
+                    <p class="amendment-section-hint">Variable values appear as blue fields inline. Hover a field to see its variable name.</p>
+                    <div id="amendmentConstitutionEditor" class="constitution-editor"></div>
                 </div>
                 <div class="form-group">
                     <label>Preview of changes</label>
@@ -265,6 +265,7 @@ function showModal(type) {
                     <button type="button" class="btn btn-primary" onclick="submitAmendment()">Submit Amendment</button>
                 </div>
             `;
+                initAmendmentConstitutionEditor(selectedGroup);
             }
             break;
 

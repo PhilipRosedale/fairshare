@@ -171,15 +171,26 @@
                         <i data-lucide="x" aria-hidden="true"></i>
                     </button>
                 </div>
-                <button
-                    type="button"
-                    id="contactsSortBtn"
-                    class="contacts-sort-btn"
-                    aria-label="Change sort order"
-                    title="Sort contacts">
-                    <span class="contacts-sort-label" id="contactsSortLabel">Met</span>
-                    <span class="contacts-sort-arrow"><i data-lucide="chevron-down" aria-hidden="true"></i></span>
-                </button>
+                <div class="contacts-sort-wrap">
+                    <button
+                        type="button"
+                        id="contactsSortBtn"
+                        class="contacts-sort-btn"
+                        aria-label="Change sort order"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-controls="contactsSortMenu"
+                        title="Sort contacts">
+                        <span class="contacts-sort-label" id="contactsSortLabel">Trust</span>
+                        <span class="contacts-sort-arrow"><i data-lucide="chevron-down" aria-hidden="true"></i></span>
+                    </button>
+                    <div id="contactsSortMenu" class="contacts-sort-menu hidden" role="listbox" aria-labelledby="contactsSortBtn">
+                        <button type="button" class="contacts-sort-option" role="option" data-sort-mode="recent">Met</button>
+                        <button type="button" class="contacts-sort-option" role="option" data-sort-mode="age">Known</button>
+                        <button type="button" class="contacts-sort-option" role="option" data-sort-mode="trust">Trust</button>
+                        <button type="button" class="contacts-sort-option" role="option" data-sort-mode="custom">Custom</button>
+                    </div>
+                </div>
             </div>
             <div class="contacts-list-wrap">
                 <div id="contactsListContent">

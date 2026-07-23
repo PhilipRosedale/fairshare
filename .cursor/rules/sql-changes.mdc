@@ -1,9 +1,27 @@
 ---
-description: After modifying SQL schema files, provide a ready-to-paste SQL block
+description: Apply SQL schema changes via Supabase CLI — never ask the user to paste SQL
 globs: sql/**/*.sql
 alwaysApply: false
 ---
 
-# SQL Change Output
+# SQL Schema Changes
 
-After editing any SQL schema file, always end your response with the complete SQL statements the user needs to run in the Supabase SQL Editor, in a single fenced code block they can copy-paste directly. Only include the changed/new statements — not the entire file.
+This machine is logged into the Supabase CLI and linked to **FairshareWeb** (`vdpqgmrfvlaieqpvpdcr`). Apply schema changes yourself — do **not** give the user a SQL block to paste into the dashboard.
+
+## Workflow
+
+1. Edit or create the SQL file under `sql/` (repo source of truth for change scripts).
+2. Apply it to the linked remote project:
+
+```powershell
+supabase db query --linked -f sql/your-change.sql
+```
+
+3. Confirm the command succeeded. Report what was applied; do not dump the full SQL for the user to run.
+
+## Rules
+
+- Prefer `-f` with a file path. Avoid inline SQL when the script contains `$` / `$$` (PowerShell eats dollar quoting).
+- Do **not** end responses with a ready-to-paste SQL Editor block unless the CLI apply failed and the user must intervene.
+- Local Docker is not required for remote schema changes (`db query --linked` uses the Management API).
+- Keep using `sql/*.sql` files; do not invent a parallel migration history under `supabase/migrations/` unless explicitly asked.

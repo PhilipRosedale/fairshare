@@ -3,8 +3,7 @@ async function loadMembersList() {
     const el = document.getElementById('membersListContent');
     if (!el) return;
 
-    // Look back one month (30 days) for each member's transaction activity.
-    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const monthAgo = new Date(Date.now() - 30 * APP_TIMING.DAY_MS).toISOString();
 
     const [{ data, error }, { data: sponsorships }, { data: txns }] = await Promise.all([
         db.from('members')
@@ -16,36 +15,45 @@ async function loadMembersList() {
             .select('candidate_id, sponsor:profiles!sponsorships_sponsor_id_fkey(display_name)')
             .eq('group_id', selectedGroup.id)
             .eq('status', 'claimed'),
-        // Peer transactions in this group over the previous month.
-        // Exclude automated daily income (those rows have a null from_user).
+        // Peer transactions only. Minted daily income (from_user null) is the same
+        // for every member, so counting it would bury the earned-income signal.
         db.from('transactions')
-            .select('from_user, to_user, amount, created_at')
+            .select('from_user, to_user, amount, fee')
             .eq('group_id', selectedGroup.id)
             .gte('created_at', monthAgo)
             .not('from_user', 'is', null)
     ]);
+
     if (error || !data) {
         el.innerHTML = '<p>Failed to load members.</p>';
         return;
     }
+
     // Update member count display
     const countEl = document.getElementById('memberCountDisplay');
     if (countEl) countEl.textContent = `${data.length} active member${data.length === 1 ? '' : 's'}`;
+
     // Build a map of candidate_id → sponsor name
     const sponsorMap = {};
     (sponsorships || []).forEach(s => {
         if (s.candidate_id) sponsorMap[s.candidate_id] = s.sponsor?.display_name || null;
     });
-    // Sum each member's transaction total (sent + received) over the previous month.
-    const txTotals = {};
+
+    // Received and sent are tracked separately so the list shows who is earning
+    // from others rather than just who is busy. Senders are debited the full
+    // amount and recipients credited net of the fee, mirroring the balance
+    // changes send_currency actually applies.
+    const flows = {};
+    const flowFor = id => (flows[id] || (flows[id] = { in: 0, out: 0 }));
     (txns || []).forEach(t => {
-        const amt = Number(t.amount) || 0;
-        if (t.from_user) txTotals[t.from_user] = (txTotals[t.from_user] || 0) + amt;
-        if (t.to_user) txTotals[t.to_user] = (txTotals[t.to_user] || 0) + amt;
+        const amount = Number(t.amount) || 0;
+        const fee = Number(t.fee) || 0;
+        if (t.from_user) flowFor(t.from_user).out += amount;
+        if (t.to_user) flowFor(t.to_user).in += amount - fee;
     });
-    const currencySymbol = selectedGroup.currency_symbol || '';
-    const currencyOn = typeof groupCurrencyEnabled === 'function'
-        ? groupCurrencyEnabled(selectedGroup) : true;
+
+    const sym = esc(selectedGroup.currency_symbol);
+    const currencyOn = groupCurrencyEnabled(selectedGroup);
 
     el.innerHTML = data.map(m => {
         const sponsor = sponsorMap[m.user_id];
@@ -56,21 +64,18 @@ async function loadMembersList() {
         const avatarHtml = avatarUrl
             ? `<img class="member-avatar" src="${esc(avatarUrl)}" alt="">`
             : `<div class="member-avatar-placeholder">${esc(displayName.charAt(0).toUpperCase())}</div>`;
-        // Member's total transactions over the previous month, shown as a
-        // right-aligned pill so the numbers line up in a scannable column.
-        const txTotal = txTotals[m.user_id] || 0;
-        const txPill = currencyOn
-            ? `<span class="member-tx-total"
-                     title="Total transactions over the previous month"
-                     style="margin-left:auto;padding:3px 10px;border-radius:999px;background:rgba(0,0,0,0.05);font-size:0.72rem;color:var(--dark-gray);white-space:nowrap;">
-                   <strong style="font-weight:600;">${esc(currencySymbol)}${txTotal.toFixed(2)}</strong> this month
-               </span>`
+        const flow = flows[m.user_id] || { in: 0, out: 0 };
+        const flowHtml = currencyOn
+            ? `<span class="member-tx-flow" title="Received and sent over the last 30 days">
+                <span class="member-tx-in${flow.in ? '' : ' member-tx-idle'}">+${sym} ${flow.in.toFixed(2)}</span>
+                <span class="member-tx-out${flow.out ? '' : ' member-tx-idle'}">-${sym} ${flow.out.toFixed(2)}</span>
+            </span>`
             : '';
         return `<div class="member-item">
             ${avatarHtml}
             <span class="member-name">${esc(displayName)}</span>
             ${sponsorLabel ? `<span class="member-sponsor">${sponsorLabel}</span>` : ''}
-            ${txPill}
+            ${flowHtml}
         </div>`;
     }).join('');
 }

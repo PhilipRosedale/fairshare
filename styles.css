@@ -868,7 +868,7 @@ body {
     margin-right: 0.6rem;
     flex-shrink: 0;
 }
-.member-name { font-weight: 500; }
+.member-name { font-weight: 500; white-space: nowrap; }
 .member-status {
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
@@ -876,7 +876,37 @@ body {
 }
 .member-status.active { background: #d4edda; color: #155724; }
 .member-status.pending { background: #fff3cd; color: #856404; }
-.member-sponsor { font-size: 0.8rem; color: var(--dark-gray); font-style: italic; margin-left: auto; }
+/* Truncates rather than wraps so a long sponsor name cannot push the
+   member name onto a second line on narrow screens. */
+.member-sponsor {
+    font-size: 0.8rem;
+    color: var(--dark-gray);
+    font-style: italic;
+    margin-left: auto;
+    padding-left: 0.5rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.member-tx-flow {
+    display: flex;
+    gap: 0.45rem;
+    margin-left: auto;
+    padding-left: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+/* .member-sponsor already claims the row's free space; a second auto margin
+   would split that space and unpin the sponsor label from the right edge. */
+.member-sponsor + .member-tx-flow { margin-left: 0; }
+.member-tx-flow > span { min-width: 4.5em; text-align: right; }
+.member-tx-in { color: var(--green); }
+.member-tx-out { color: var(--red); }
+.member-tx-flow .member-tx-idle { color: var(--dark-gray); opacity: 0.5; }
 
 /* Modal overlay (above contact list and meet overlay so dialogs are visible) */
 .modal-overlay {

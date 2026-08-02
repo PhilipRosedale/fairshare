@@ -31,6 +31,22 @@ There is **no** real-money transfer, no purchasable digital good, and no cryptoc
 
 ---
 
+## Quick Start
+
+1. **Sign In.** Sign-up normally requires an in-person QR handshake with an existing member. To test without that, sign in with a demo account.
+
+2. **Meet Handshake.** Tap the heart-shaped `Meet` button in the bottom bar. You'll see your own QR code plus a live camera view labeled **"Scan QR Code."** This is designed for two people to hold their phones facing each other so each camera scans the other's code. To test solo: tap "Copy invite link" instead of scanning, then open that link in a private/incognito browser tab (signed out) and sign up as a new user there. This completes the same handshake without needing a second device. Screenshots of this flow: https://app.fairshare.social/support.html#app-review
+
+3. **Contacts.** After connecting via Meet or the demo account's existing contacts, open a contact to see profile info, vouching, and an optional selfie ("Selfies together"). Click on their profile picture to "Suggest a new picture." 
+
+4. **Groups.** From the Groups tab, open one of the demo account's groups to see chat, the internal credit balance, and voting on the fee rate / daily income. These credits are fictional and cannot be bought, sold, or withdrawn.
+
+Camera permission is used for scanning a sponsor's QR code at sign-up, the Meet handshake above, taking a selfie with a contact, and suggesting a new profile picture for a contact.
+
+Full guideline-by-guideline detail, background-location testing steps, and a reviewer FAQ follow below.
+
+---
+
 ## Group "credits" / "currencies" — Guideline 3.1
 
 Each group can define its own internal token (often called credits, coins, or points). These tokens:
@@ -72,12 +88,27 @@ Deletion is irreversible.
 
 | Permission / mode | Why Union needs it | Where it's used in the app |
 |---|---|---|
-| Camera (`NSCameraUsageDescription`) | Scanning sponsor QR codes at sign-up; exchanging contacts on the "meet" screen; taking selfies with new contacts | Auth screen → Sign Up → Scan QR; bottom-bar 🤝 Meet button; contact handshake selfie |
+| Camera (`NSCameraUsageDescription`) | Scanning sponsor QR codes at sign-up; exchanging contacts on the "meet" screen; taking selfies with new contacts; suggesting a new profile picture for a contact | Auth screen → Sign Up → Scan QR; bottom-bar 🤝 Meet button; contact handshake selfie; Contact Details → Suggest new picture → Take a picture|
 | Photo Library (`NSPhotoLibraryUsageDescription`) | Picking a profile photo, group logo, or suggested-picture from the user's library | Profile screen → tap avatar; Group screen → tap group logo; Suggest-picture flow on contact details |
 | Location When-In-Use (`NSLocationWhenInUseUsageDescription`) | Showing nearby Union members the user has explicitly chosen to be alerted about; reverse-geocoding for selfies on the Globe screen | Bottom-bar Globe; Contact details → "Notify if nearby" toggle |
 | Location Always (`NSLocationAlwaysAndWhenInUseUsageDescription`) | Continuing live location share to a specific contact while the app is backgrounded — only after the user explicitly toggles "Share My Location" with a duration | Contact details → "Share My Location" toggle (For an Hour / Day / Week / Indefinitely) |
 | `UIBackgroundModes` → `location` | Same as above — required so the location share keeps streaming when the user puts the phone away | iOS only flips `allowsBackgroundLocationUpdates = true` when the user holds Always authorization AND has at least one active outbound share (see `BackgroundLocationPlugin.swift`) |
 | `UIBackgroundModes` → `remote-notification` | APNs push for new chat messages, contact requests, and nearby alerts | Capacitor Push Notifications plugin |
+
+### Camera permission — recovering from a denial
+
+If a user taps **Don't Allow** on the camera permission prompt, iOS never re-prompts — the only way back is Settings → Union → Camera. Requiring that manual step is standard iOS behavior and not itself a review risk, but the app previously gave no indication that Settings was the way back at all (just a dead-end "Could not access camera" toast). Both camera entry points ([js/auth.js](../js/auth.js) QR scan, [js/contacts.js](../js/contacts.js) selfie/meet overlay) now detect a permission-denial error (`NotAllowedError`) specifically and show a tappable toast — "Camera access is off. Tap here to open Settings and allow it for Union." — that deep-links to this app's page in iOS Settings (`app-settings:`) via `openIOSAppSettings()` in [js/utils.js](../js/utils.js). Other camera errors (e.g. no camera hardware) still show the original generic message, since Settings can't help there. This is a UX improvement, not a documented fix for a specific rejection.
+
+### Testing the Meet handshake with a single device — Guideline 2.1
+
+The **Meet** flow (bottom-bar 🤝 button) is designed for two people scanning each other's QR code with their own camera, which a solo reviewer with one device cannot do. Do **not** rely on the camera-to-camera path for review. Instead:
+
+1. Sign in as the demo account → tap the 🤝 **Meet** button.
+2. Tap **Copy Link** (skip the camera scan entirely).
+3. Open a **new private/incognito Safari tab**, signed out, and paste the copied link (`https://app.fairshare.social/?meet=TOKEN`).
+4. Sign up as a new user from that tab. This completes the handshake and adds both accounts as contacts of each other — the same underlying `complete_meet` RPC that the camera-to-camera scan uses.
+
+Note: opening a Meet link while **already signed in** intentionally does nothing but show a toast ("Share this link with someone who is not yet on Union") — the link only completes a connection during a fresh sign-up, so testing requires the private-tab-and-sign-up path above, not a second logged-in demo account.
 
 ### Background location demonstration
 
@@ -132,6 +163,7 @@ After completing the content/capability questions (including the messaging / use
 ## Reviewer FAQ
 
 - **Q: Can I sign up without a sponsor?** Use the demo account above, or paste the one-time invite link into Safari on the device.
+- **Q: How do I test the Meet/handshake flow with only one device?** See "Testing the Meet handshake with a single device" above — tap **Copy Link** in the Meet screen instead of scanning, then open the link in a private Safari tab and sign up as a new user there.
 - **Q: How do I trigger a chat message?** Open one of the demo groups → **Chat** tab → type a message. To test the report flow, use the second demo account on a separate device (or web) to send a message, then tap the `⋮` next to it.
 - **Q: How do I test "Block"?** Open a contact → scroll to the **Safety** card → tap **Block**. Confirm. The contact disappears from the contacts list, chat, and map.
 - **Q: How do I delete my account?** Profile → **Delete Account** → type `DELETE` → tap **Delete my account**.

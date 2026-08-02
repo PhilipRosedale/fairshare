@@ -330,29 +330,30 @@
 <!-- ===== MEET / QR CONTACT EXCHANGE OVERLAY ===== -->
 <div id="meetOverlay" class="meet-overlay hidden">
     <button class="meet-close" onclick="closeMeetScreen()" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
-    <div class="meet-camera-pip">
+    <div class="meet-scan-hint" id="meetScanHint">(Show your phones to each other)</div>
+    <div class="meet-camera-pip" id="meetCameraPip">
         <video id="meetVideo" autoplay playsinline muted></video>
+        <div class="meet-camera-label">Scan QR Code</div>
     </div>
     <div class="meet-qr-section">
         <div class="meet-group-badge" id="meetGroupBadge" style="display:none;"></div>
         <div class="meet-qr-box" id="meetQrBox">
             <!-- QR code rendered here -->
         </div>
-        <button class="meet-copy-btn" id="meetCopyBtn" onclick="copyMeetLink()" style="display:none;"><i data-lucide="clipboard-copy" aria-hidden="true"></i><span>Copy invite link</span></button>
+        <img class="meet-profile-photo" id="meetProfilePhoto" alt="" />
         <div class="meet-profile-row">
             <button class="meet-share-icon" id="meetSharePhone" onclick="toggleMeetShare('phone')" title="Share phone number">
                 <i data-lucide="phone" aria-hidden="true"></i>
             </button>
-            <img class="meet-profile-photo" id="meetProfilePhoto" alt="" />
+            <button class="meet-copy-btn" id="meetCopyBtn" onclick="copyMeetLink()" style="display:none;"><i data-lucide="clipboard-copy" aria-hidden="true"></i><span>Copy invite link</span></button>
             <button class="meet-share-icon" id="meetShareEmail" onclick="toggleMeetShare('email')" title="Share email address">
                 <i data-lucide="mail" aria-hidden="true"></i>
             </button>
         </div>
-        <div class="meet-profile-name" id="meetProfileName"></div>
         <div class="meet-shared-info" id="meetSharedInfo" style="display:none;"></div>
+        <div class="meet-profile-name" id="meetProfileName"></div>
     </div>
     <canvas id="meetCanvas" style="display:none;"></canvas>
-    <div class="meet-scan-hint" id="meetScanHint">(Show your phones to each other)</div>
 </div>
 
 

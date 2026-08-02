@@ -100,12 +100,12 @@ async function renderDirectMessageScreen(contactId) {
                 </div>
                 <div class="dm-typing-indicator" id="dmTypingIndicator" hidden>${esc(displayName)} is typing…</div>
                 <div class="chat-input-bar dm-input-bar">
-                    <input type="text" id="dmInput" placeholder="Type a message…" maxlength="2000"
+                    <textarea id="dmInput" placeholder="Type a message…" maxlength="2000" rows="1"
                            autocorrect="off" autocapitalize="off" spellcheck="false"
-                           oninput="onDirectMessageInputChange()"
+                           oninput="onDirectMessageInputChange(); autoGrowMessageInput(this);"
                            onkeydown="onDirectMessageInputKeydown(event)"
                            onfocus="onDirectMessageInputFocus()"
-                           onblur="onDirectMessageInputBlur()">
+                           onblur="onDirectMessageInputBlur()"></textarea>
                     <button class="btn-icon chat-image-btn" onclick="openDirectChatPhotoPicker()" title="Send photo" type="button">
                         <i data-lucide="image" aria-hidden="true"></i>
                     </button>
@@ -317,6 +317,7 @@ async function sendDirectMessage() {
         return;
     }
     input.value = '';
+    autoGrowMessageInput(input);
     stopDirectMessageTyping();
     if (msg) appendDirectMessage(msg, true);
 }

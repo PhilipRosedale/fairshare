@@ -106,9 +106,10 @@ async function renderChatTab() {
                 <p style="color:var(--dark-gray);text-align:center;padding:2rem 0;">Loading…</p>
             </div>
             <div class="chat-input-bar">
-                <input type="text" id="chatInput" placeholder="Type a message…" maxlength="2000"
+                <textarea id="chatInput" placeholder="Type a message…" maxlength="2000" rows="1"
                        autocorrect="off" autocapitalize="off" spellcheck="false"
-                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}">
+                       oninput="autoGrowMessageInput(this)"
+                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}"></textarea>
                 <button class="btn-icon chat-image-btn" onclick="openGroupChatPhotoPicker()" title="Send photo" type="button">
                     <i data-lucide="image" aria-hidden="true"></i>
                 </button>
@@ -490,6 +491,7 @@ async function sendChatMessage() {
         showToast('Failed to send message: ' + error.message, 'error');
     } else {
         input.value = '';
+        autoGrowMessageInput(input);
         input.blur();
         if (msg) appendChatMessage(msg, true);
         scheduleLayoutChatPanel();

@@ -1395,7 +1395,7 @@ body.chat-tab-active .tab-content-card {
     border-top: 1px solid var(--medium-gray);
     background: var(--light-gray);
     min-width: 0; /* prevent flex row from overflowing tab card */
-    align-items: center;
+    align-items: flex-end; /* keep Send aligned to the last line as the box grows */
 }
 body.chat-tab-active .chat-input-bar {
     position: fixed;
@@ -1621,7 +1621,8 @@ body.dm-screen-active .main-content {
 .dm-reaction-option:hover {
     background: var(--light-gray);
 }
-.chat-input-bar input {
+.chat-input-bar input,
+.chat-input-bar textarea {
     flex: 1;
     min-width: 0; /* critical: input shrinks so Send stays in frame */
     padding: 0.6rem 0.8rem;
@@ -1631,7 +1632,17 @@ body.dm-screen-active .main-content {
     font-size: 16px; /* prevents iOS zoom */
     background: var(--white);
 }
-.chat-input-bar input:focus {
+/* Composer grows with the message, then scrolls. Height itself is set by
+   autoGrowMessageInput() in js/utils.js; max-height is the ceiling it reads. */
+.chat-input-bar textarea {
+    display: block;
+    resize: none;
+    overflow-y: hidden;
+    line-height: 1.35;
+    max-height: 7.5rem; /* ~5 lines before the box stops growing */
+}
+.chat-input-bar input:focus,
+.chat-input-bar textarea:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(58, 124, 165, 0.15);

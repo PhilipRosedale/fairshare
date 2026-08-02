@@ -128,3 +128,19 @@ function sendInboundShareEmailPhonePush(toUserId, body) {
         if (pErr) console.warn('share email/phone push error:', pErr);
     });
 }
+
+/**
+ * Grow a message composer to fit its content, up to the max-height set in CSS,
+ * and only then scroll. Call on input and again after the field is cleared,
+ * so the box collapses back to one row after a message is sent.
+ */
+function autoGrowMessageInput(el) {
+    if (!el) return;
+    const maxHeight = parseInt(window.getComputedStyle(el).maxHeight, 10);
+    el.style.height = 'auto';
+    const target = Number.isFinite(maxHeight)
+        ? Math.min(el.scrollHeight, maxHeight)
+        : el.scrollHeight;
+    el.style.height = `${target}px`;
+    el.style.overflowY = el.scrollHeight > target ? 'auto' : 'hidden';
+}

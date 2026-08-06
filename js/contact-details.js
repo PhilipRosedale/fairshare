@@ -739,8 +739,11 @@ function cdOpenTrustInfoDialog() {
                 three vouch-based signals. Every vouch counts, but vouches
                 fade with age &mdash; a vouch from <strong>two years ago is
                 worth half</strong> of one made today (a half-life of two
-                years). The score you see is normalized 0&ndash;100 against
-                your most-connected contact.
+                years). The combined total maps onto a fixed 0&ndash;100
+                scale where each extra helping of vouch weight closes
+                <strong>half the remaining distance</strong> to 100 &mdash;
+                so this score only moves when vouches involving this
+                contact change.
             </p>
 
             <p class="cd-trust-info-foot">

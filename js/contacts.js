@@ -581,15 +581,8 @@ function bindContactActionEvents(content) {
 function renderContactRows(rows) {
     const content = document.getElementById('contactsListContent');
     if (!content) return;
-    // Trust mode normalizes each row's raw trust_score against the max across
-    // the currently visible rows, mirroring the 0..100 normalization done
-    // server-side by get_contact_trust_summary.
-    const maxTrustScore = rows.reduce(
-        (acc, r) => Math.max(acc, Number(r.contact.trust_score) || 0),
-        0
-    );
     content.innerHTML = rows.map(({ contact, profile, shared }) => (
-        renderContactRow(contact, profile, shared, maxTrustScore)
+        renderContactRow(contact, profile, shared)
     )).join('');
     bindContactRowEvents(content);
     bindContactActionEvents(content);
@@ -1128,20 +1121,29 @@ function bindContactDragSort(content) {
     });
 }
 
+// Maps a raw (weighted, time-decayed) trust score onto the absolute 0..100
+// scale used everywhere in the UI: 100 * (1 - 2^(-raw / half)). Mirrors the
+// formula in get_contact_trust_summary (sql/contact-details-schema.sql);
+// keep TRUST_SCORE_HALF_RAW in sync with c_score_half_raw there.
+const TRUST_SCORE_HALF_RAW = 4.0;
+function trustScoreFromRaw(raw) {
+    const r = Math.max(0, Number(raw) || 0);
+    const score = Math.round(100 * (1 - Math.pow(2, -r / TRUST_SCORE_HALF_RAW)));
+    return Math.max(0, Math.min(100, score));
+}
+
 // Right-edge content for a contact row depends on the active sort mode so the
-// data the user is sorting by is always visible. Trust mode normalizes the
-// raw stored score against the caller's max so it lands on a 0..100 scale,
-// matching how get_contact_trust_summary normalizes for the details ring.
-function renderContactRowRightEdge(contact, knownDuration, lastSeen, maxTrustScore) {
+// data the user is sorting by is always visible. Trust mode maps the raw
+// stored score onto the same absolute 0..100 scale the details ring uses,
+// so the list and the Contact Details screen always agree.
+function renderContactRowRightEdge(contact, knownDuration, lastSeen) {
     if (contactsSortMode === 'age') {
         return knownDuration
             ? `<span class="contact-row-known">${esc(knownDuration)}</span>`
             : '';
     }
     if (contactsSortMode === 'trust') {
-        const raw = Number(contact.trust_score) || 0;
-        const max = Number(maxTrustScore) || 0;
-        const score = max > 0 ? Math.round((raw / max) * 100) : 0;
+        const score = trustScoreFromRaw(contact.trust_score);
         const r = 14;
         const c = 2 * Math.PI * r;
         const offset = c - (score / 100) * c;
@@ -1161,7 +1163,7 @@ function renderContactRowRightEdge(contact, knownDuration, lastSeen, maxTrustSco
     return lastSeen ? `<span class="contact-row-lastseen">${esc(lastSeen)}</span>` : '';
 }
 
-function renderContactRow(contact, profile, shared, maxTrustScore) {
+function renderContactRow(contact, profile, shared) {
     const name = profile.display_name || 'Unknown';
     const avatarUrl = profile.profile_image_url || null;
     const phone = (shared.shared_phone != null && shared.shared_phone !== '') ? shared.shared_phone : '';
@@ -1172,7 +1174,7 @@ function renderContactRow(contact, profile, shared, maxTrustScore) {
     const lastSeen = formatLastSeen(contact.met_at);
     const knownSinceDateStr = contact.first_met_at || contact.created_at || null;
     const knownDuration = formatKnownDuration(knownSinceDateStr);
-    const rightEdgeHtml = renderContactRowRightEdge(contact, knownDuration, lastSeen, maxTrustScore);
+    const rightEdgeHtml = renderContactRowRightEdge(contact, knownDuration, lastSeen);
     const firstMetValue = knownSinceDateStr ? new Date(knownSinceDateStr).toISOString().slice(0, 10) : '';
     const firstMetDisplayValue = formatFirstMetDisplay(knownSinceDateStr);
     const avatarHtml = avatarUrl

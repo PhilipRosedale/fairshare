@@ -12,7 +12,7 @@ Backend expectations for profiles, shared fields, and realtime “someone shared
 
 ## Auto-updating contact info
 
-Instead of static phone numbers in an address book, the model is a **living profile**: name, email, phone, photo (and optional **selfie** shared in the context of a contact pair). You choose what to **share** with each contact (e.g. phone and email checkboxes); when you update your card, what you’ve shared stays meaningful for the other person. Details and tables (`contact_shared`, `contact_shares`) are in [contact-list-schema.md](contact-list-schema.md).
+Instead of static phone numbers in an address book, the model is a **living profile**: name, email, phone, photo (and optional **selfie** shared in the context of a contact pair). You choose what to **share** with each contact (e.g., phone and email checkboxes); when you update your card, what you’ve shared stays meaningful for the other person. Details and tables (`contact_shared`, `contact_shares`) are in [contact-list-schema.md](contact-list-schema.md).
 
 ## Vouching and a trust network
 

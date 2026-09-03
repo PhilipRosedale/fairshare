@@ -107,7 +107,6 @@ async function renderChatTab() {
             </div>
             <div class="chat-input-bar">
                 <input type="text" id="chatInput" placeholder="Type a message…" maxlength="2000"
-                       autocorrect="off" autocapitalize="off" spellcheck="false"
                        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}">
                 <button class="btn-icon chat-image-btn" onclick="openGroupChatPhotoPicker()" title="Send photo" type="button">
                     <i data-lucide="image" aria-hidden="true"></i>

@@ -101,7 +101,6 @@ async function renderDirectMessageScreen(contactId) {
                 <div class="dm-typing-indicator" id="dmTypingIndicator" hidden>${esc(displayName)} is typing…</div>
                 <div class="chat-input-bar dm-input-bar">
                     <input type="text" id="dmInput" placeholder="Type a message…" maxlength="2000"
-                           autocorrect="off" autocapitalize="off" spellcheck="false"
                            oninput="onDirectMessageInputChange()"
                            onkeydown="onDirectMessageInputKeydown(event)"
                            onfocus="onDirectMessageInputFocus()"

@@ -5298,3 +5298,29 @@ a.contact-shared-group-link:active {
     cursor: default;
 }
 
+
+
+/* Password show/hide toggle (eye button on login/signup) */
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field input { padding-right: 2.6rem; } /* room for the eye button */
+.password-toggle {
+    position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 0.25rem; background: none; border: none; cursor: pointer;
+    color: var(--dark-gray); transition: var(--transition);
+}
+.password-toggle:hover { color: var(--primary-color); }
+.password-toggle .lucide-icon { width: 1.15rem; height: 1.15rem; }
+
+
+/* Social sign-in buttons + divider (login) */
+.auth-social { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.btn-oauth { display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; padding: 0.7rem 1rem; font-size: 0.95rem; }
+.btn-oauth .lucide-icon { width: 1.15rem; height: 1.15rem; }
+.btn-oauth-apple { background: #000; color: #fff; }
+.btn-oauth-apple:hover:not(:disabled) { background: #222; }
+.btn-oauth-google { background: #fff; color: #3c4043; border: 1px solid var(--medium-gray); }
+.btn-oauth-google:hover:not(:disabled) { background: #f7f7f7; }
+.auth-divider { display: flex; align-items: center; text-align: center; color: var(--dark-gray); font-size: 0.8rem; margin: 1rem 0; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--medium-gray); }
+.auth-divider span { padding: 0 0.75rem; }

@@ -686,3 +686,53 @@ if ('serviceWorker' in navigator) {
         }
     });
 }
+
+
+// Toggle password field visibility (eye button on login/signup).
+function togglePasswordVisibility(btn) {
+    const input = btn.closest('.password-field').querySelector('input');
+    const reveal = input.type === 'password';
+    input.type = reveal ? 'text' : 'password';
+    btn.innerHTML = '<i data-lucide="' + (reveal ? 'eye-off' : 'eye') + '" aria-hidden="true"></i>';
+    btn.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+    if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+
+// Social sign-in (Google / Apple) via Supabase OAuth.
+async function handleOAuthLogin(provider) {
+    const label = provider === 'apple' ? 'Apple' : 'Google';
+    try {
+        const { data, error } = await db.auth.signInWithOAuth({ provider: provider, options: { skipBrowserRedirect: true } });
+        if (error) { showToast(label + ' sign-in is not enabled yet: ' + error.message, 'error'); return; }
+        if (data && data.url) { showToast(label + ' is connected. Redirect handling is the next setup step.', 'success'); }
+        else { showToast(label + ' returned no redirect. Check the Supabase provider config.', 'error'); }
+    } catch (e) { showToast(label + ' sign-in is not available yet.', 'error'); }
+}
+
+
+// Loading state for the Log In / Create Account buttons.
+// Wraps the existing handlers so the submit button disables and shows progress
+// while the request runs. If the wrap ever fails, the original handler still
+// runs, so auth is never broken by this.
+(function () {
+    function wrap(name, busyLabel) {
+        const orig = window[name];
+        if (typeof orig !== 'function' || orig.__loadingWrapped) return;
+        async function wrapped(e) {
+            const btn = (e && e.target && e.target.querySelector)
+                ? e.target.querySelector('button[type="submit"]') : null;
+            let prevText;
+            if (btn) { prevText = btn.textContent; btn.disabled = true; btn.textContent = busyLabel; }
+            try {
+                return await orig.call(this, e);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = prevText; }
+            }
+        }
+        wrapped.__loadingWrapped = true;
+        window[name] = wrapped;
+    }
+    wrap('handleLogin', 'Signing in...');
+    wrap('handleSignup', 'Creating account...');
+})();

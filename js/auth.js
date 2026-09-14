@@ -710,14 +710,22 @@ function togglePasswordVisibility(btn) {
 
 
 // Social sign-in (Google / Apple) via Supabase OAuth.
+// Sends the browser to the provider. On return to this origin, the Supabase
+// client detects the session in the URL and init.js's onAuthStateChange
+// (SIGNED_IN) handler completes the login. This is the WEB flow only; the
+// native iOS/Android apps will need deep-link handling before OAuth works
+// in-app, which is why the buttons stay gated off there for now.
 async function handleOAuthLogin(provider) {
     const label = provider === 'apple' ? 'Apple' : 'Google';
     try {
-        const { data, error } = await db.auth.signInWithOAuth({ provider: provider, options: { skipBrowserRedirect: true } });
-        if (error) { showToast(label + ' sign-in is not enabled yet: ' + error.message, 'error'); return; }
-        if (data && data.url) { showToast(label + ' is connected. Redirect handling is the next setup step.', 'success'); }
-        else { showToast(label + ' returned no redirect. Check the Supabase provider config.', 'error'); }
-    } catch (e) { showToast(label + ' sign-in is not available yet.', 'error'); }
+        const { error } = await db.auth.signInWithOAuth({
+            provider: provider,
+            options: { redirectTo: window.location.origin }
+        });
+        if (error) showToast(label + ' sign-in failed: ' + error.message, 'error');
+    } catch (e) {
+        showToast(label + ' sign-in is not available right now.', 'error');
+    }
 }
 
 

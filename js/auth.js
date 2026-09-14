@@ -1,3 +1,13 @@
+// --- Social sign-in (Google/Apple) switch ---
+// The OAuth buttons stay hidden (see styles.css) until their providers are
+// actually enabled in Supabase, so users never tap a button that goes nowhere.
+// TO TURN THEM ON: enable the Google/Apple providers in the Supabase dashboard,
+// then set the line below to true and rebuild. That's the only code change needed.
+const OAUTH_ENABLED = false;
+document.addEventListener('DOMContentLoaded', () => {
+    if (OAUTH_ENABLED) document.body.classList.add('oauth-on');
+});
+
 let authScanStream = null;
 let authScanTimer = null;
 let authScanHandled = false;

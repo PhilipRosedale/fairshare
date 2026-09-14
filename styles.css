@@ -5324,3 +5324,13 @@ a.contact-shared-group-link:active {
 .auth-divider { display: flex; align-items: center; text-align: center; color: var(--dark-gray); font-size: 0.8rem; margin: 1rem 0; }
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--medium-gray); }
 .auth-divider span { padding: 0 0.75rem; }
+
+/* --- Social sign-in gating ---
+   The Google/Apple sign-in buttons stay hidden until their providers are
+   actually configured in Supabase, so users never see a button that goes
+   nowhere. auth.js adds the `oauth-on` class to <body> when OAUTH_ENABLED
+   is set to true. */
+.auth-social,
+.auth-divider { display: none; }
+body.oauth-on .auth-social { display: flex; }
+body.oauth-on .auth-divider { display: flex; }

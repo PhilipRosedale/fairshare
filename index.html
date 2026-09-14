@@ -75,13 +75,21 @@
     </div>
 
     <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="auth-social">
+            <button type="button" class="btn btn-oauth btn-oauth-apple" onclick="handleOAuthLogin('apple')"><i data-lucide="apple" aria-hidden="true"></i> Continue with Apple</button>
+            <button type="button" class="btn btn-oauth btn-oauth-google" onclick="handleOAuthLogin('google')"><i data-lucide="chrome" aria-hidden="true"></i> Continue with Google</button>
+        </div>
+        <div class="auth-divider"><span>or</span></div>
         <div class="form-group">
             <label>Email</label>
             <input type="email" id="loginEmail" required placeholder="you@example.com">
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input type="password" id="loginPassword" required placeholder="Your password" minlength="6">
+            <div class="password-field">
+                <input type="password" id="loginPassword" required placeholder="Your password" minlength="6">
+                <button type="button" class="password-toggle" aria-label="Show password" onclick="togglePasswordVisibility(this)"><i data-lucide="eye" aria-hidden="true"></i></button>
+            </div>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Log In</button>
@@ -128,7 +136,10 @@
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="signupPassword" required placeholder="At least 6 characters" minlength="6">
+                <div class="password-field">
+                    <input type="password" id="signupPassword" required placeholder="At least 6 characters" minlength="6">
+                    <button type="button" class="password-toggle" aria-label="Show password" onclick="togglePasswordVisibility(this)"><i data-lucide="eye" aria-hidden="true"></i></button>
+                </div>
             </div>
             <div class="form-group auth-agree-row">
                 <label class="auth-agree-label">

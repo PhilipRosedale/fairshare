@@ -1,3 +1,17 @@
+// --- Social sign-in (Google/Apple) switch ---
+// OAuth buttons stay hidden (see styles.css) until we flip this on. Two guards:
+//   1) OAUTH_ENABLED gates them globally (set to true at go-live).
+//   2) They only ever show on the WEB build. The native iOS/Android apps keep
+//      them hidden until deep-link handling is built, and because a Google
+//      button with no working Apple button trips App Store guideline 4.8.
+// TO GO LIVE ON WEB: the provider is already enabled in Supabase (Google done),
+// so set OAUTH_ENABLED to true and rebuild/deploy.
+const OAUTH_ENABLED = false;
+document.addEventListener('DOMContentLoaded', () => {
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if (OAUTH_ENABLED && !isNative) document.body.classList.add('oauth-on');
+});
+
 let authScanStream = null;
 let authScanTimer = null;
 let authScanHandled = false;
@@ -686,3 +700,61 @@ if ('serviceWorker' in navigator) {
         }
     });
 }
+
+
+// Toggle password field visibility (eye button on login/signup).
+function togglePasswordVisibility(btn) {
+    const input = btn.closest('.password-field').querySelector('input');
+    const reveal = input.type === 'password';
+    input.type = reveal ? 'text' : 'password';
+    btn.innerHTML = '<i data-lucide="' + (reveal ? 'eye-off' : 'eye') + '" aria-hidden="true"></i>';
+    btn.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+    if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+
+// Social sign-in (Google / Apple) via Supabase OAuth.
+// Sends the browser to the provider. On return to this origin, the Supabase
+// client detects the session in the URL and init.js's onAuthStateChange
+// (SIGNED_IN) handler completes the login. This is the WEB flow only; the
+// native iOS/Android apps will need deep-link handling before OAuth works
+// in-app, which is why the buttons stay gated off there for now.
+async function handleOAuthLogin(provider) {
+    const label = provider === 'apple' ? 'Apple' : 'Google';
+    try {
+        const { error } = await db.auth.signInWithOAuth({
+            provider: provider,
+            options: { redirectTo: window.location.origin }
+        });
+        if (error) showToast(label + ' sign-in failed: ' + error.message, 'error');
+    } catch (e) {
+        showToast(label + ' sign-in is not available right now.', 'error');
+    }
+}
+
+
+// Loading state for the Log In / Create Account buttons.
+// Wraps the existing handlers so the submit button disables and shows progress
+// while the request runs. If the wrap ever fails, the original handler still
+// runs, so auth is never broken by this.
+(function () {
+    function wrap(name, busyLabel) {
+        const orig = window[name];
+        if (typeof orig !== 'function' || orig.__loadingWrapped) return;
+        async function wrapped(e) {
+            const btn = (e && e.target && e.target.querySelector)
+                ? e.target.querySelector('button[type="submit"]') : null;
+            let prevText;
+            if (btn) { prevText = btn.textContent; btn.disabled = true; btn.textContent = busyLabel; }
+            try {
+                return await orig.call(this, e);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = prevText; }
+            }
+        }
+        wrapped.__loadingWrapped = true;
+        window[name] = wrapped;
+    }
+    wrap('handleLogin', 'Signing in...');
+    wrap('handleSignup', 'Creating account...');
+})();

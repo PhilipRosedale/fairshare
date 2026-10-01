@@ -159,8 +159,8 @@ function navigateTo(view, arg) {
         }
         case 'groups':
             groupsContent.classList.remove('hidden');
-            renderGroupList();
-            if (typeof restoreChatLayoutIfNeeded === 'function') {
+            if (previousMainView === 'groups' && selectedGroup) showGroupsList(); else renderGroupList();
+            if (selectedGroup && typeof restoreChatLayoutIfNeeded === 'function') {
                 restoreChatLayoutIfNeeded();
             }
             break;

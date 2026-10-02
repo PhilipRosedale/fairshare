@@ -378,7 +378,7 @@
 </div>
 
 <!-- ===== MODAL CONTAINER ===== -->
-<div id="modalOverlay" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+<div id="modalOverlay" class="modal-overlay hidden" onmousedown="this._d=(event.target===this)" ontouchstart="this._d=(event.target===this)" onclick="if(this._d&&event.target===this)closeModal();this._d=false">
     <div class="modal" id="modalBody">
         <!-- Populated dynamically per modal type -->
     </div>

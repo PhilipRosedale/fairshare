@@ -370,6 +370,20 @@ async function handlePendingInvite() {
 async function showMeetBanner(token) {
     try {
         const { data, error } = await db.rpc('get_meet_by_token', { p_token: token });
+
+        // The invitee already signed up with this handshake and is waiting on
+        // their confirmation email. Their account is fine -- the token also
+        // rides in auth user_metadata -- so keep the stored token and the
+        // validated sponsor gate, and point them at Log In rather than
+        // telling them the link is spent.
+        if (data?.status === 'awaiting_confirmation') {
+            document.getElementById('inviteBannerText').innerHTML =
+                `<strong>Almost there.</strong> ${esc(data.message || 'Check your email to confirm your account, then log in.')}`;
+            document.getElementById('inviteBanner').classList.remove('hidden');
+            if (typeof switchAuthTab === 'function') switchAuthTab('login');
+            return;
+        }
+
         if (error || data?.error) {
             const msg = data?.error || error?.message || 'Invalid meet link';
             document.getElementById('inviteBannerText').innerHTML =

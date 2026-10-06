@@ -91,7 +91,7 @@ function openMapPicker() {
         attributionControl: false
     }).setView([0, 0], 2);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    L.tileLayer(APP_MAP.TILE_URL, {
         maxZoom: 20,
         subdomains: 'abcd'
     }).addTo(map);

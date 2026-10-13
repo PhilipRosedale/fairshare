@@ -4,3 +4,4 @@ node_modules/
 www/
 ios/App/Pods/
 supabase/.temp/
+.claude/

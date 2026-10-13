@@ -65,6 +65,29 @@
         <li><strong>Sign-up:</strong> Union uses an invite-based flow. If someone shared a link or QR code with you, use that to join.</li>
         <li><strong>Group credits:</strong> In-app tokens are fictional social points for groups only; they are not money and cannot be cashed out.</li>
     </ul>
+
+    <h2 id="app-review">For App Store reviewers</h2>
+    <p>This section walks through Union's camera-based "Meet" handshake.</p>
+
+    <div class="callout">
+        <strong>What Meet does.</strong> Two people who are physically together each open Meet and hold their phones facing each other. Each phone's front camera reads the QR code shown on the other phone's screen, which creates a mutual contact connection between the two accounts.
+    </div>
+
+    <p><strong>Step 1 &mdash; Open Meet.</strong> Tap the heart-shaped button in the bottom bar. You'll see your own QR code and a live camera view labeled "Scan QR Code," with the instruction "Point your camera at a friend's screen to scan their code" at the top.</p>
+    <!-- Screenshot: Meet screen showing the camera view + QR code + instructions -->
+    <img src="./assets/support/meet-screen.png" alt="Meet screen showing the camera view, QR code, and instructions" style="width:100%;max-width:360px;border-radius:8px;margin:0.5rem 0;">
+
+    <p><strong>Step 2 &mdash; Point your camera at the other phone's screen.</strong> As soon as a QR code is detected in frame, the camera view's border flashes green to confirm it's actively scanning even before the connection completes.</p>
+    <!-- Screenshot: camera border flashing green on QR detection -->
+    <img src="./assets/support/meet-qr-detected.png" alt="Camera view border flashing green when a QR code is detected" style="width:100%;max-width:360px;border-radius:8px;margin:0.5rem 0;">
+
+    <p><strong>Step 3 &mdash; Connection completes automatically.</strong> Once either phone successfully scans the other's code, both accounts are connected as contacts immediately while the other phone does not need to also complete a scan.</p>
+
+    <div class="callout">
+        <strong>Testing with only one device.</strong> If a second physical device isn't available, tap <strong>Copy invite link</strong> instead of scanning. Open that link in a separate private/incognito browser tab (signed out) and sign up as a new user there. This completes the same handshake without a second phone.
+    </div>
+
+    <p>Camera access is requested only when one of these features is opened, never at launch: scanning a sponsor's QR code at sign-up, the Meet handshake above, taking a selfie with a contact, and suggesting a new profile picture for a contact.</p>
 </div>
 </body>
 </html>

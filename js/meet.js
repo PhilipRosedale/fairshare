@@ -31,8 +31,11 @@ async function openMeetScreen(options) {
 
     // 2. Show the overlay immediately (camera preview + loading QR)
     document.getElementById('meetOverlay').classList.remove('hidden');
+    // document.getElementById('meetScanHint').textContent = cameraOk
+    //     ? '(Show your phones to each other)'
+    //     : 'Camera unavailable — ask the other person to scan your code';
     document.getElementById('meetScanHint').textContent = cameraOk
-        ? '(Show your phones to each other)'
+        ? 'Point your selfie camera at a friend\u2019s screen to scan QR code'
         : 'Camera unavailable — ask the other person to scan your code';
     document.getElementById('meetQrBox').innerHTML =
         '<div style="color:var(--dark-gray);font-size:0.85rem;padding:1rem;">Loading…</div>';
@@ -205,11 +208,34 @@ async function openMeetScreen(options) {
     }
 }
 
+// function meetScanLoop() {
+//     if (meetHandled) return;
+
+//     const video = document.getElementById('meetVideo');
+//     const canvas = document.getElementById('meetCanvas');
+
+//     if (video.readyState < video.HAVE_ENOUGH_DATA) {
+//         meetScanTimer = requestAnimationFrame(meetScanLoop);
+//         return;
+//     }
+
+//     canvas.width = video.videoWidth;
+//     canvas.height = video.videoHeight;
+//     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+//     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+//     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+//     const code = jsQR(imageData.data, imageData.width, imageData.height, {
+//         inversionAttempts: 'dontInvert'
+//     });
+
+//     if (code && code.data) {
 function meetScanLoop() {
     if (meetHandled) return;
 
     const video = document.getElementById('meetVideo');
     const canvas = document.getElementById('meetCanvas');
+    const pip = document.getElementById('meetCameraPip');
 
     if (video.readyState < video.HAVE_ENOUGH_DATA) {
         meetScanTimer = requestAnimationFrame(meetScanLoop);
@@ -225,6 +251,11 @@ function meetScanLoop() {
     const code = jsQR(imageData.data, imageData.width, imageData.height, {
         inversionAttempts: 'dontInvert'
     });
+
+    // Give immediate visual feedback the moment any QR pattern is seen in
+    // frame, even before we know if it decodes to a valid/fresh token —
+    // otherwise there's no indication the camera is doing anything at all.
+    if (pip) pip.classList.toggle('meet-qr-detected', !!code);
 
     if (code && code.data) {
         let scannedToken = null;

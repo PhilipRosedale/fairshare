@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Union</string>
+	<string>Union</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,8 +20,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Union uses your camera to scan a sponsor's QR code at sign-up, exchange contact info with someone you meet, take selfies together with your contacts, and suggest a new profile picture for a contact.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Union uses your location in the background only while you have actively chosen to share your live location with a specific contact, so they can see your map pin until you stop sharing.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Union uses your location to show nearby Union members you've chosen to be alerted about and to share your location with specific contacts you select.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Union uses your photo library so you can pick a profile photo, group logo, or selfie to share with your contacts.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -45,20 +60,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>Union uses your camera to scan a sponsor's QR code at sign-up, exchange contact info with someone you meet, and take selfies together with your contacts.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Union uses your photo library so you can pick a profile photo, group logo, or selfie to share with your contacts.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Union uses your location to show nearby Union members you've chosen to be alerted about and to share your location with specific contacts you select.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Union uses your location in the background only while you have actively chosen to share your live location with a specific contact, so they can see your map pin until you stop sharing.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-		<string>remote-notification</string>
-	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>

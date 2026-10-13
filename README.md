@@ -10,7 +10,34 @@ Keep track of and build trust with people, join groups, and spend locally.  Find
 - **Mutual connections:** Instantly discover shared mutuals and shared trust. 
 - **Trust and endorsements:** Privately vouch for people, building a web-of-trust that helps you meet new people safely.
 
+## Setup 
 
+Fork the repository and clone your forked version
+```bash
+git clone https://github.com/debbieyuen/fairshare.git
+```
+
+Change directories into `fairshare`
+```bash
+npm install 
+```
+
+To run the app locally via a website
+```bash
+# Available on:
+# http://127.0.0.1:3000
+# http://10.0.0.202:3000
+npm run dev
+```
+To run the app via XCode
+```bash
+npx cap open ios 
+```
+
+Make updates to reupdate XCode files
+```bash
+npm run cap:sync:ios 
+```
 
 ## Security 
 

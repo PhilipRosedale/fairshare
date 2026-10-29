@@ -711,7 +711,9 @@ async function loadAndRenderContactList() {
         const contactIds = [...new Set(visibleContacts.map(c => c.contact_id))];
         let profileMap = {};
         if (contactIds.length > 0) {
-            const { data: profiles } = await db.from('profiles').select('id, display_name, profile_image_url, phone, email, sponsor_id, created_at').in('id', contactIds);
+            // Do not select phone/email from profiles — those live in profile_private
+            // (self-only). Peer disclosure is via contact_shared only.
+            const { data: profiles } = await db.from('profiles').select('id, display_name, profile_image_url, sponsor_id, created_at').in('id', contactIds);
             if (profiles) profiles.forEach(p => { profileMap[p.id] = p; });
         }
 

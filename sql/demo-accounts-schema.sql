@@ -287,9 +287,9 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized: admin access required';
   END IF;
 
-  SELECT coalesce(p.phone, '(555) 555-0001'), coalesce(p.email, 'philip@highfidelity.io')
+  SELECT coalesce(pp.phone, '(555) 555-0001'), coalesce(pp.email, 'philip@highfidelity.io')
     INTO v_philip_phone, v_philip_email
-    FROM public.profiles p WHERE p.id = v_owner_id;
+    FROM public.profile_private pp WHERE pp.user_id = v_owner_id;
 
   v_n := jsonb_array_length(v_accounts);
 
@@ -309,14 +309,19 @@ BEGIN
 
     UPDATE public.profiles
        SET display_name = v_demo->>'display_name',
-           email = v_demo->>'contact_email',
-           phone = v_demo->>'phone',
            sponsor_id = v_owner_id,
            is_demo_account = true,
            signup_token = NULL,
            profile_image_url = 'https://app.fairshare.social/assets/demo-portraits/'
              || (v_demo->>'slug') || '.jpg'
      WHERE id = v_uid;
+
+    INSERT INTO public.profile_private (user_id, phone, email, updated_at)
+    VALUES (v_uid, v_demo->>'phone', v_demo->>'contact_email', now())
+    ON CONFLICT (user_id) DO UPDATE
+      SET phone = EXCLUDED.phone,
+          email = EXCLUDED.email,
+          updated_at = now();
 
     v_ids := array_append(v_ids, v_uid);
     v_slugs := array_append(v_slugs, v_demo->>'slug');

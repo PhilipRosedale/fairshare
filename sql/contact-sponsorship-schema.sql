@@ -156,10 +156,11 @@ BEGIN
     RETURN json_build_object('error', 'This meet link has already been used');
   END IF;
 
-  SELECT display_name, profile_image_url, phone, email
+  SELECT p.display_name, p.profile_image_url, pp.phone, pp.email
     INTO v_name, v_profile_image_url, v_phone, v_email
-  FROM public.profiles
-  WHERE id = v_meet.user_id;
+  FROM public.profiles p
+  LEFT JOIN public.profile_private pp ON pp.user_id = p.id
+  WHERE p.id = v_meet.user_id;
 
   v_result := json_build_object(
     'user_name', COALESCE(v_name, 'A Union member'),

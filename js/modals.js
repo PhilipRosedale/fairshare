@@ -409,14 +409,19 @@ function markSponsorShareInfoPromptDone(contactId) {
     } catch (_) { /* quota / private mode */ }
 }
 
-/** Save email + phone on profiles and sync pref inputs; notify contacts when values change. */
+/** Save email + phone on profile_private and sync pref inputs; notify contacts when values change. */
 async function persistProfileEmailPhone(emailTrim, phoneTrim) {
     if (!currentUser) throw new Error('Not signed in');
     const email = emailTrim || null;
     const phone = phoneTrim || null;
     const prevEmail = currentProfile?.email || '';
     const prevPhone = currentProfile?.phone || '';
-    const { error } = await db.from('profiles').update({ email, phone }).eq('id', currentUser.id);
+    const { error } = await db.from('profile_private').upsert({
+        user_id: currentUser.id,
+        phone,
+        email,
+        updated_at: new Date().toISOString()
+    });
     if (error) throw error;
     if (currentProfile) {
         currentProfile.email = email;
@@ -579,8 +584,6 @@ async function savePreferences(e) {
         const prefPreview = document.getElementById('prefPhotoPreview');
         const prevProfileImageUrl = currentProfile?.profile_image_url || null;
         const prevDisplayName = currentProfile?.display_name ?? '';
-        const prevEmail = currentProfile?.email || '';
-        const prevPhone = currentProfile?.phone || '';
         let profileImageUrl = prevProfileImageUrl;
         /** True when we just uploaded a new file from the prefs picker (public URL may match the old one). */
         let uploadedNewProfilePhoto = false;
@@ -601,9 +604,7 @@ async function savePreferences(e) {
             }
         }
         const payload = {
-            display_name: displayName || currentUser.email,
-            email: email || null,
-            phone: phone || null
+            display_name: displayName || currentUser.email
         };
         if (profileImageUrl !== undefined) payload.profile_image_url = profileImageUrl;
 
@@ -643,10 +644,14 @@ async function savePreferences(e) {
             showToast('Could not save: ' + error.message, 'error');
             return;
         }
+        try {
+            await persistProfileEmailPhone(email, phone);
+        } catch (privErr) {
+            showToast('Could not save phone/email: ' + (privErr.message || 'error'), 'error');
+            return;
+        }
         if (currentProfile) {
             currentProfile.display_name = payload.display_name;
-            currentProfile.email = email || null;
-            currentProfile.phone = phone || null;
             currentProfile.profile_image_url = profileImageUrl;
             if (pushCheck) currentProfile.push_notifications = pushCheck.checked;
             if ('trust_weight_direct'  in payload) currentProfile.trust_weight_direct  = payload.trust_weight_direct;
@@ -663,25 +668,16 @@ async function savePreferences(e) {
             prefPreview._pendingFile = undefined;
         }
 
-        // Notify contacts of profile changes (photo, email, phone).
+        // Notify contacts of photo changes. Email/phone notifies are handled
+        // inside persistProfileEmailPhone (called above).
         const pictureChanged = uploadedNewProfilePhoto
             || !!(profileImageUrl && profileImageUrl !== prevProfileImageUrl);
-        const emailChanged = (email || '') !== prevEmail;
-        const phoneChanged = (phone || '') !== prevPhone;
         if (pictureChanged) {
             // Dedicated RPC: sends 'profile_picture_updated' notifications so
             // contacts can refresh their cached avatar via Realtime without a
             // full app reload.
             db.rpc('notify_contacts_of_profile_picture_change', { p_actor_id: currentUser.id })
                 .then(({ error }) => { if (error) console.warn('notify profile pic change error:', error); });
-        }
-        if (emailChanged || phoneChanged) {
-            const changes = [];
-            if (emailChanged) changes.push('email');
-            if (phoneChanged) changes.push('phone number');
-            const msg = payload.display_name + ' updated their ' + changes.join(' and ') + '.';
-            db.rpc('notify_contacts_of_profile_update', { p_actor_id: currentUser.id, p_message: msg })
-                .then(({ error }) => { if (error) console.warn('notify profile update error:', error); });
         }
         const displayNameChanged = (prevDisplayName || '').trim() !== (payload.display_name || '').trim();
         if (displayNameChanged) {

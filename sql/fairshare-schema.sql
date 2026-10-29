@@ -17,10 +17,8 @@ create table public.profiles (
 
 alter table public.profiles enable row level security;
 
--- Anyone can read profiles (needed to display member names)
-create policy "Profiles are viewable by everyone"
-  on public.profiles for select
-  using (true);
+-- Profiles SELECT is locked down (see sql/security-fix-profiles-pii-and-balance.sql):
+-- own row, contacts, and group peers only. phone/email live in profile_private.
 
 -- Users can insert their own profile
 create policy "Users can insert own profile"
@@ -166,11 +164,13 @@ create policy "Group members can view members"
     or public.is_group_member(group_id)
   );
 
--- Users can join groups: as 'pending' for any group, or 'active' if they created the group
+-- Users can join groups: as 'pending' for any group, or 'active' if they created the group.
+-- balance must be 0 (clients cannot mint on insert); trigger also forces 0.
 create policy "Users can request to join groups"
   on public.members for insert
   with check (
     auth.uid() = user_id
+    and balance = 0
     and (
       status = 'pending'
       or (status = 'active' and exists (
@@ -2313,10 +2313,11 @@ begin
     return json_build_object('error', 'Meet request not found or expired');
   end if;
 
-  select display_name, profile_image_url, phone, email
+  select p.display_name, p.profile_image_url, pp.phone, pp.email
     into v_name, v_profile_image_url, v_phone, v_email
-  from public.profiles
-  where id = v_meet.user_id;
+  from public.profiles p
+  left join public.profile_private pp on pp.user_id = p.id
+  where p.id = v_meet.user_id;
 
   v_result := json_build_object(
     'user_name', coalesce(v_name, 'A Union member'),

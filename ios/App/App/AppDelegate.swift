@@ -62,3 +62,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 }
+
+
+/// UIScene lifecycle is required for apps built with the iOS 27 SDK.
+/// The window and root view controller come from Main.storyboard (UISceneStoryboardFile).
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        // Keep AppDelegate.window pointing at the live window (used for orientation handling).
+        (UIApplication.shared.delegate as? AppDelegate)?.window = window
+    }
+}

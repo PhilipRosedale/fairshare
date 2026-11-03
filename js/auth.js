@@ -4,9 +4,9 @@
 //   2) They only ever show on the WEB build. The native iOS/Android apps keep
 //      them hidden until deep-link handling is built, and because a Google
 //      button with no working Apple button trips App Store guideline 4.8.
-// TO GO LIVE ON WEB: the provider is already enabled in Supabase (Google done),
-// so set OAUTH_ENABLED to true and rebuild/deploy.
-const OAUTH_ENABLED = false;
+// Google is live on web. Apple stays commented out in index.html until it is
+// configured; flip this to false to hide social sign-in again.
+const OAUTH_ENABLED = true;
 document.addEventListener('DOMContentLoaded', () => {
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
     if (OAUTH_ENABLED && !isNative) document.body.classList.add('oauth-on');

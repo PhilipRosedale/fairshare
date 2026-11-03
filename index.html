@@ -313,7 +313,7 @@
             <i class="bottom-bar-lucide" data-lucide="user-round" aria-hidden="true"></i>
             <span class="bottom-bar-label">Contacts</span>
         </button>
-        <button type="button" class="bottom-bar-btn bottom-bar-btn-center" onclick="openMeetScreen()" aria-label="Handshake">
+        <button type="button" class="bottom-bar-btn bottom-bar-btn-center" id="unionButton" onclick="openUnionFan()" aria-label="Union" aria-haspopup="menu" aria-controls="unionFan">
             <span class="bottom-bar-handshake"><i data-lucide="heart-handshake" aria-hidden="true"></i></span>
         </button>
         <button type="button" class="bottom-bar-btn" data-view="groups" onclick="navigateTo('groups')" aria-label="Groups">
@@ -341,6 +341,98 @@
 </div>
 
 <!-- ===== MEET / QR CONTACT EXCHANGE OVERLAY ===== -->
+<!-- ===== UNION FAN (Pay / Request / Connect) ===== -->
+<div id="unionFan" class="union-fan hidden" aria-hidden="true">
+    <div class="union-fan-scrim" onclick="closeUnionFan()"></div>
+    <div class="union-fan-items" role="menu" aria-label="Union actions">
+        <div class="ufi" style="--tx:-96px;--ty:-116px;--d:0ms">
+            <button type="button" class="ubub pay" role="menuitem" aria-label="Pay" onclick="unionFanPick('pay')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            <span class="ulab" aria-hidden="true">Pay</span>
+        </div>
+        <div class="ufi" style="--tx:96px;--ty:-116px;--d:35ms">
+            <button type="button" class="ubub req" role="menuitem" aria-label="Request" onclick="unionFanPick('request')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
+            <span class="ulab" aria-hidden="true">Request</span>
+        </div>
+        <div class="ufi small" style="--tx:0px;--ty:-212px;--d:90ms">
+            <button type="button" class="ubub con" role="menuitem" aria-label="Connect" onclick="unionFanPick('connect')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.5-3 2.8-4.6 5.5-4.6s5 1.6 5.5 4.6"/><path d="M18 8v6M15 11h6"/></svg></button>
+            <span class="ulab" aria-hidden="true">Connect</span>
+        </div>
+    </div>
+    <button type="button" class="union-fan-close" onclick="closeUnionFan()" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+
+<!-- ===== PAY / REQUEST FLOW ===== -->
+<div id="payOverlay" class="pay-overlay hidden">
+    <canvas id="payCanvas" style="display:none;"></canvas>
+
+    <section class="pay-view" data-view="compose">
+        <div class="pay-topbar">
+            <button type="button" class="pay-link" onclick="closePayFlow()">Cancel</button>
+            <span class="pay-modepill pay" id="payModePill" role="status"></span>
+            <button type="button" class="pay-link pay-link-r" onclick="payPasteCode()" title="Enter a code by hand">Paste</button>
+        </div>
+        <div class="pay-camwrap" id="payCamWrap">
+            <video id="payVideo" autoplay playsinline muted></video>
+            <div class="bk"><i></i><i></i><i></i><i></i></div>
+            <div class="cl" id="payCamHint">Scan their code</div>
+        </div>
+        <div class="pay-or"><span>OR</span></div>
+        <div class="pay-amtbox">
+            <div class="v zero" id="payAmount" aria-live="polite">0</div>
+            <div class="pay-curname" id="payCurName"></div>
+            <button type="button" class="pay-chip" id="payGroupChip" onclick="openPayGroups()" aria-haspopup="dialog"></button>
+        </div>
+        <div class="pay-memo"><input type="text" id="payMemo" placeholder="What is it for?" maxlength="60" autocomplete="off"></div>
+        <div class="pay-keys" role="group" aria-label="Amount keypad">
+            <button type="button" onclick="payKey('1')">1</button><button type="button" onclick="payKey('2')">2</button><button type="button" onclick="payKey('3')">3</button>
+            <button type="button" onclick="payKey('4')">4</button><button type="button" onclick="payKey('5')">5</button><button type="button" onclick="payKey('6')">6</button>
+            <button type="button" onclick="payKey('7')">7</button><button type="button" onclick="payKey('8')">8</button><button type="button" onclick="payKey('9')">9</button>
+            <button type="button" class="dim" onclick="payKey('.')" aria-label="Decimal point">.</button><button type="button" onclick="payKey('0')">0</button><button type="button" class="dim" onclick="payKey('x')" aria-label="Delete">&#9003;</button>
+        </div>
+        <div class="pay-foot"><button type="button" class="pay-btn" id="payGo" disabled onclick="payMakeCode()">Pay</button></div>
+    </section>
+
+    <section class="pay-view pay-view-code hidden" data-view="code">
+        <div class="pay-topbar">
+            <button type="button" class="pay-link light" onclick="payCancelCode()">Cancel</button><span></span><span></span>
+        </div>
+        <div class="pay-qrcard"><div id="payQrBox" class="pay-qr"></div></div>
+        <div class="pay-dirlab" id="payCodeDir"></div>
+        <div class="pay-big" id="payCodeAmt"></div>
+        <div class="pay-curname light center" id="payCodeCur"></div>
+        <div class="pay-item" id="payCodeMemo"></div>
+        <div class="pay-hr"></div>
+        <div class="pay-who" id="payCodeName"></div>
+        <div class="pay-grp" id="payCodeGroup"></div>
+        <div class="pay-wait">Hold this up for them to scan.</div>
+    </section>
+
+    <section class="pay-view hidden" data-view="confirm">
+        <div class="pay-topbar">
+            <button type="button" class="pay-link" onclick="payDecline()">Cancel</button>
+            <span class="pay-title">Confirm</span><span></span>
+        </div>
+        <div id="payConfirmReceipt"></div>
+        <div class="pay-balline"><div class="l">Your balance in <span id="payConfirmGroup"></span></div><div class="r" id="payConfirmBal"></div></div>
+        <div class="pay-foot pay-foot-end">
+            <button type="button" class="pay-btn" id="payConfirmGo" onclick="payConfirmPay()">Pay</button>
+            <button type="button" class="pay-btn ghost" onclick="payDecline()">Decline</button>
+        </div>
+    </section>
+
+    <section class="pay-view hidden" data-view="done" id="payDone">
+        <div class="pay-topbar"><span></span><span class="pay-title" id="payDoneTitle"></span><span></span></div>
+        <div id="payDoneBody"></div>
+        <div class="pay-balline"><div class="l">Your balance in <span id="payDoneGroup"></span></div><div class="r" id="payDoneBal"></div></div>
+        <div class="pay-foot pay-foot-end"><button type="button" class="pay-btn" onclick="closePayFlow()">Done</button></div>
+    </section>
+
+    <div id="payGroupSheet" class="pay-gsheet hidden" aria-hidden="true" role="dialog" aria-label="Which group">
+        <div class="pay-gscrim" onclick="closePayGroups()"></div>
+        <div class="pay-gpanel"><div class="gt">Which group?</div><div id="payGroupList"></div></div>
+    </div>
+</div>
+
 <div id="meetOverlay" class="meet-overlay hidden">
     <button class="meet-close" onclick="closeMeetScreen()" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
     <div class="meet-camera-pip">
@@ -426,6 +518,7 @@
 <script src="js/navigation.js"></script>
 <script src="js/globe.js"></script>
 <script src="js/meet.js"></script>
+<script src="js/pay.js"></script>
 <script src="js/nearby.js"></script>
 <script src="js/location-sharing.js"></script>
 <script src="js/contacts.js"></script>

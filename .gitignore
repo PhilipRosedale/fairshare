@@ -4,3 +4,9 @@ node_modules/
 www/
 ios/App/Pods/
 supabase/.temp/
+
+# Signing keys live outside git. Never commit these.
+android/keystores/
+*.jks
+*.keystore
+android/app/google-services.json

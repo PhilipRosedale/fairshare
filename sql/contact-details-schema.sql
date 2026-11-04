@@ -64,6 +64,23 @@ DECLARE
   c_decay_a          CONSTANT double precision := ln(2.0) / 2.0;  -- = ln(2) / c_half_life_years
   c_seconds_per_year CONSTANT double precision := 31556952.0;     -- Julian year (365.2425d)
 
+  -- ===== SCORE SCALE (HALF-POINT = 4.0) =====================================
+  -- combined_raw maps onto 0..100 through a saturating curve:
+  --   score = 100 * (1 - 2^(-combined_raw / c_score_half_raw))
+  -- Each additional c_score_half_raw of combined_raw closes half the
+  -- remaining distance to 100 -- the same halving convention as the time
+  -- decay above, applied to vouch mass instead of age. With the default
+  -- weights, two fresh direct vouches (combined_raw = 4) score 50, four
+  -- score 75, and very strong ties approach 100 asymptotically.
+  --
+  -- The scale is ABSOLUTE: a contact's score depends only on vouches
+  -- involving that contact, so it never shifts because an unrelated contact
+  -- gained or lost vouches, and the same number means the same thing for
+  -- every user. (The previous scheme divided by the caller's max, which
+  -- pinned the top contact at 100 even with a single stale vouch and made
+  -- every score move when any other contact's vouches changed.)
+  c_score_half_raw   CONSTANT double precision := 4.0;
+
   -- ===== COMPONENT WEIGHTS ===================================================
   -- combined_raw = v_w_direct  * direct_sum
   --              + v_w_mutuals * mutuals_sum
@@ -263,10 +280,11 @@ BEGIN
   -- combined_raw = v_w_direct*DIRECT + v_w_mutuals*MUTUALS + v_w_trusted*TRUSTED
   --
   -- We recompute combined_raw for EVERY one of the caller's contacts on each
-  -- call so the persisted contacts.trust_score column stays current and we
-  -- have a fresh max for normalization. The displayed score is then
-  --   round(100 * combined_raw / max_combined_raw across my contacts)
-  -- guarded against divide-by-zero.
+  -- call so the persisted contacts.trust_score column stays current for the
+  -- contact-list ring and a future "score changed" trigger. The displayed
+  -- score maps combined_raw onto an absolute 0..100 scale (see SCORE SCALE
+  -- block above):
+  --   round(100 * (1 - 2^(-combined_raw / c_score_half_raw)))
   -- ===========================================================================
 
   WITH
@@ -395,7 +413,8 @@ BEGIN
         )
     );
 
-  -- Read back combined_raw + max from the just-updated cache.
+  -- Read back combined_raw from the just-updated cache. max_combined_raw is
+  -- still returned for transparency/debugging but no longer feeds the score.
   SELECT
     COALESCE(c.trust_score, 0),
     COALESCE((SELECT MAX(trust_score) FROM public.contacts WHERE user_id = v_caller_id), 0)
@@ -403,14 +422,11 @@ BEGIN
   FROM public.contacts c
   WHERE c.user_id = v_caller_id AND c.contact_id = p_contact_id;
 
-  -- Normalize 0..100; guard divide-by-zero (every score is 0).
-  IF v_max_combined_raw IS NULL OR v_max_combined_raw <= 0 THEN
-    v_score := 0;
-  ELSE
-    v_score := GREATEST(0, LEAST(100,
-      ROUND(100.0 * v_combined_raw / v_max_combined_raw)::int
-    ));
-  END IF;
+  -- Absolute 0..100 scale; see SCORE SCALE block above. Depends only on this
+  -- contact's combined_raw, so the number is stable and comparable.
+  v_score := GREATEST(0, LEAST(100,
+    ROUND(100.0 * (1.0 - POWER(2.0, -GREATEST(v_combined_raw, 0) / c_score_half_raw)))::int
+  ));
 
   RETURN json_build_object(
     'score',                   v_score,

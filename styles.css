@@ -1514,6 +1514,11 @@ body.dm-screen-active .main-content {
     margin: 0;
     padding: 0;
     min-height: 0;
+    /* dvh, not vh: in a mobile browser tab 100vh is the *large* viewport (URL
+       bar retracted), so with the URL bar showing this column runs past the
+       bottom of the screen and takes the composer with it. overflow:hidden
+       then leaves no way to scroll to it. Same vh-fallback-then-dvh pattern
+       as .globe-viz-wrap.expanded below. */
     height: calc(100vh - (env(safe-area-inset-top, 0px) + 80px));
     height: calc(100dvh - (env(safe-area-inset-top, 0px) + 80px));
     display: flex;

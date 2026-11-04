@@ -36,11 +36,17 @@ function payFmt(n) {
 function payMoneyHtml(n, sym) {
     return `<span class="pay-sym">${esc(sym || '')}</span>${payFmt(n)}`;
 }
+// Groups you can pay or request in: currency on, and you hold some of it. People in
+// many groups only have currency in a few, so the chooser stays short. If you hold
+// nothing anywhere, fall back to every currency group so a Request is still possible.
+// Codes from any group still scan fine; the code decides the group, not this list.
 function payGroups() {
-    return (myGroups || [])
+    const all = (myGroups || [])
         .filter(m => m.status === 'active' && m.groups && groupCurrencyEnabled(m.groups))
         .map(m => ({ id: m.group_id, name: m.groups.name, sym: m.groups.currency_symbol,
                      cur: m.groups.currency_name, bal: Number(m.balance || 0) }));
+    const funded = all.filter(g => g.bal > 0);
+    return (funded.length ? funded : all).sort((a, b) => b.bal - a.bal || a.name.localeCompare(b.name));
 }
 function payActiveGroup() {
     const gs = payGroups();

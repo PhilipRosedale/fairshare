@@ -5513,9 +5513,10 @@ body.oauth-on .auth-divider { display: flex; }
 .pay-gsheet.hidden { display: none; }
 .pay-gscrim { position: absolute; inset: 0; background: rgba(16,25,36,.4); }
 .pay-gpanel { position: absolute; left: 0; right: 0; bottom: 0; max-width: 480px; margin: 0 auto; background: #fff; border-radius: 20px 20px 0 0;
-    padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px)); animation: paySheetUp .26s var(--pay-out) both; box-shadow: 0 -10px 30px rgba(10,20,30,.12); }
+    padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; max-height: 72vh; max-height: 72dvh; animation: paySheetUp .26s var(--pay-out) both; box-shadow: 0 -10px 30px rgba(10,20,30,.12); }
 @keyframes paySheetUp { from { transform: translateY(28px); opacity: 0; } to { transform: none; opacity: 1; } }
-.pay-gpanel .gt { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--pay-ink-2); font-weight: 600; padding: 6px 10px 10px; }
+#payGroupList { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; min-height: 0; flex: 1; }
+.pay-gpanel .gt { flex: none; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--pay-ink-2); font-weight: 600; padding: 6px 10px 10px; }
 .pay-grow { display: flex; align-items: center; gap: 14px; padding: 12px 10px; border-radius: 14px; width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--pay-ink); }
 .pay-grow:active { background: var(--pay-page); }
 .pay-grow.on { background: var(--pay-brand-bg); }

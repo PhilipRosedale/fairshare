@@ -16,6 +16,11 @@ const NATIVE_PLATFORM = IS_NATIVE && typeof window.Capacitor.getPlatform === 'fu
 // to the production host in that case.
 const PUBLIC_APP_ORIGIN = 'https://app.fairshare.social';
 
+// Google OAuth "Web application" client ID (Google Cloud > Google Auth Platform
+// > Clients). Native Google sign-in on Android hands Supabase an ID token
+// minted for this client. Not a secret; it ships in the app.
+const GOOGLE_WEB_CLIENT_ID = '397095849055-asjsmj5uetmjlirbcog220kqetqgj3dv.apps.googleusercontent.com';
+
 function publicAppUrl(pathAndQuery = '/') {
   if (IS_NATIVE) {
     const suffix = pathAndQuery.startsWith('/') ? pathAndQuery : '/' + pathAndQuery;

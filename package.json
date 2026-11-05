@@ -20,7 +20,8 @@
     "@capacitor/ios": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
     "@capacitor/screen-orientation": "^8.0.0",
-    "@capacitor/status-bar": "^8.0.0"
+    "@capacitor/status-bar": "^8.0.0",
+    "@capgo/capacitor-social-login": "^8.7.6"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0"

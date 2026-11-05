@@ -4,12 +4,18 @@
 //   2) They only ever show on the WEB build. The native iOS/Android apps keep
 //      them hidden until deep-link handling is built, and because a Google
 //      button with no working Apple button trips App Store guideline 4.8.
-// Google is live on web. Apple stays commented out in index.html until it is
-// configured; flip this to false to hide social sign-in again.
+// Google is live on web and on native Android (native account picker, see
+// handleOAuthLogin). iOS stays hidden until Sign in with Apple exists too
+// (App Store guideline 4.8). Flip this to false to hide social sign-in again.
 const OAUTH_ENABLED = true;
+function oauthPlatform() {
+    const cap = window.Capacitor;
+    if (!(cap && cap.isNativePlatform && cap.isNativePlatform())) return 'web';
+    return (cap.getPlatform && cap.getPlatform()) || 'native';
+}
 document.addEventListener('DOMContentLoaded', () => {
-    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-    if (OAUTH_ENABLED && !isNative) document.body.classList.add('oauth-on');
+    const platform = oauthPlatform();
+    if (OAUTH_ENABLED && (platform === 'web' || platform === 'android')) document.body.classList.add('oauth-on');
 });
 
 let authScanStream = null;
@@ -721,6 +727,7 @@ function togglePasswordVisibility(btn) {
 // in-app, which is why the buttons stay gated off there for now.
 async function handleOAuthLogin(provider) {
     const label = provider === 'apple' ? 'Apple' : 'Google';
+    if (provider === 'google' && oauthPlatform() === 'android') return handleNativeGoogleLogin();
     try {
         const { error } = await db.auth.signInWithOAuth({
             provider: provider,
@@ -729,6 +736,46 @@ async function handleOAuthLogin(provider) {
         if (error) showToast(label + ' sign-in failed: ' + error.message, 'error');
     } catch (e) {
         showToast(label + ' sign-in is not available right now.', 'error');
+    }
+}
+
+
+// Native Google sign-in (Android). Google's own account sheet pops over the
+// app, hands back an ID token, and Supabase turns that into a session; no
+// browser round trip, no redirect URL. The nonce dance is what Supabase asks
+// for: Google gets the SHA-256 of a random string, Supabase gets the string.
+let socialLoginReady = null;
+async function ensureSocialLogin() {
+    const plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SocialLogin;
+    if (!plugin) throw new Error('Social login plugin missing');
+    if (!socialLoginReady) {
+        socialLoginReady = plugin.initialize({
+            google: { webClientId: GOOGLE_WEB_CLIENT_ID, skipAuthOnlyAuthorizationAfterSignIn: true }
+        }).catch(e => { socialLoginReady = null; throw e; });
+    }
+    await socialLoginReady;
+    return plugin;
+}
+async function sha256Hex(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function handleNativeGoogleLogin() {
+    try {
+        const plugin = await ensureSocialLogin();
+        const rawNonce = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now();
+        const hashedNonce = await sha256Hex(rawNonce);
+        const res = await plugin.login({ provider: 'google', options: { nonce: hashedNonce } });
+        const idToken = res && res.result && res.result.idToken;
+        if (!idToken) throw new Error('Google did not return a token');
+        const { error } = await db.auth.signInWithIdToken({ provider: 'google', token: idToken, nonce: rawNonce });
+        if (error) throw error;
+        // init.js's onAuthStateChange (SIGNED_IN) takes it from here.
+    } catch (e) {
+        const msg = (e && e.message) || String(e || '');
+        // The user closing Google's sheet is not an error worth a toast.
+        if (/cancel|canceled|cancelled|dismiss/i.test(msg)) return;
+        showToast('Google sign-in failed: ' + msg, 'error');
     }
 }
 

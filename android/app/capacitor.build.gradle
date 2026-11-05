@@ -13,6 +13,7 @@ dependencies {
     implementation project(':capacitor-push-notifications')
     implementation project(':capacitor-screen-orientation')
     implementation project(':capacitor-status-bar')
+    implementation project(':capgo-capacitor-social-login')
 
 }
 

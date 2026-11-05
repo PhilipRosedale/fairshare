@@ -5336,6 +5336,9 @@ a.contact-shared-group-link:active {
 .auth-divider { display: none; }
 body.oauth-on .auth-social { display: flex; }
 body.oauth-on .auth-divider { display: flex; }
+/* Apple only where native Sign in with Apple exists (iOS app). */
+.btn-oauth-apple { display: none; }
+body.oauth-apple-on .btn-oauth-apple { display: flex; }
 
 
 /* =====================================================================

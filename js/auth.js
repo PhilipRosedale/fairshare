@@ -4,9 +4,11 @@
 //   2) They only ever show on the WEB build. The native iOS/Android apps keep
 //      them hidden until deep-link handling is built, and because a Google
 //      button with no working Apple button trips App Store guideline 4.8.
-// Google is live on web and on native Android (native account picker, see
-// handleOAuthLogin). iOS stays hidden until Sign in with Apple exists too
-// (App Store guideline 4.8). Flip this to false to hide social sign-in again.
+// Google is live on web (redirect), Android (native account picker) and iOS
+// (native Google SDK). Sign in with Apple shows on iOS only, where Apple
+// requires it next to any other social login (App Store guideline 4.8); on
+// web it would need a Services ID and key we have not set up. Flip this to
+// false to hide social sign-in everywhere.
 const OAUTH_ENABLED = true;
 function oauthPlatform() {
     const cap = window.Capacitor;
@@ -14,8 +16,10 @@ function oauthPlatform() {
     return (cap.getPlatform && cap.getPlatform()) || 'native';
 }
 document.addEventListener('DOMContentLoaded', () => {
+    if (!OAUTH_ENABLED) return;
     const platform = oauthPlatform();
-    if (OAUTH_ENABLED && (platform === 'web' || platform === 'android')) document.body.classList.add('oauth-on');
+    document.body.classList.add('oauth-on');            // Google button
+    if (platform === 'ios') document.body.classList.add('oauth-apple-on');
 });
 
 let authScanStream = null;
@@ -727,7 +731,10 @@ function togglePasswordVisibility(btn) {
 // in-app, which is why the buttons stay gated off there for now.
 async function handleOAuthLogin(provider) {
     const label = provider === 'apple' ? 'Apple' : 'Google';
-    if (provider === 'google' && oauthPlatform() === 'android') return handleNativeGoogleLogin();
+    const platform = oauthPlatform();
+    if (platform === 'android' || platform === 'ios') {
+        return provider === 'apple' ? handleNativeAppleLogin() : handleNativeGoogleLogin();
+    }
     try {
         const { error } = await db.auth.signInWithOAuth({
             provider: provider,
@@ -749,9 +756,16 @@ async function ensureSocialLogin() {
     const plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SocialLogin;
     if (!plugin) throw new Error('Social login plugin missing');
     if (!socialLoginReady) {
-        socialLoginReady = plugin.initialize({
-            google: { webClientId: GOOGLE_WEB_CLIENT_ID, skipAuthOnlyAuthorizationAfterSignIn: true }
-        }).catch(e => { socialLoginReady = null; throw e; });
+        const opts = {
+            google: {
+                webClientId: GOOGLE_WEB_CLIENT_ID,
+                iOSClientId: GOOGLE_IOS_CLIENT_ID || undefined,
+                iOSServerClientId: GOOGLE_WEB_CLIENT_ID,
+                skipAuthOnlyAuthorizationAfterSignIn: true
+            }
+        };
+        if (oauthPlatform() === 'ios') opts.apple = { clientId: 'social.fairshare.union' };
+        socialLoginReady = plugin.initialize(opts).catch(e => { socialLoginReady = null; throw e; });
     }
     await socialLoginReady;
     return plugin;
@@ -760,10 +774,19 @@ async function sha256Hex(str) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+function newNonce() {
+    return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now();
+}
+function isUserCancel(e) {
+    const msg = (e && e.message) || String(e || '');
+    // Closing the provider's sheet is not an error worth a toast. Apple's
+    // cancel comes through as ASAuthorizationError code 1001.
+    return /cancel|canceled|cancelled|dismiss|1001/i.test(msg);
+}
 async function handleNativeGoogleLogin() {
     try {
         const plugin = await ensureSocialLogin();
-        const rawNonce = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now();
+        const rawNonce = newNonce();
         const hashedNonce = await sha256Hex(rawNonce);
         const res = await plugin.login({ provider: 'google', options: { nonce: hashedNonce } });
         const idToken = res && res.result && res.result.idToken;
@@ -772,10 +795,39 @@ async function handleNativeGoogleLogin() {
         if (error) throw error;
         // init.js's onAuthStateChange (SIGNED_IN) takes it from here.
     } catch (e) {
-        const msg = (e && e.message) || String(e || '');
-        // The user closing Google's sheet is not an error worth a toast.
-        if (/cancel|canceled|cancelled|dismiss/i.test(msg)) return;
-        showToast('Google sign-in failed: ' + msg, 'error');
+        if (isUserCancel(e)) return;
+        showToast('Google sign-in failed: ' + ((e && e.message) || e), 'error');
+    }
+}
+// Sign in with Apple (iOS). Same shape as Google: Apple's sheet, an identity
+// token, Supabase turns it into a session. Apple only sends the person's name
+// on their very first sign-in, so we write it to the profile ourselves when
+// the trigger had nothing better than the email prefix to go on.
+async function handleNativeAppleLogin() {
+    try {
+        const plugin = await ensureSocialLogin();
+        const rawNonce = newNonce();
+        const hashedNonce = await sha256Hex(rawNonce);
+        const res = await plugin.login({ provider: 'apple', options: { scopes: ['email', 'name'], nonce: hashedNonce } });
+        const r = (res && res.result) || {};
+        const idToken = r.idToken;
+        if (!idToken) throw new Error('Apple did not return a token');
+        const { data, error } = await db.auth.signInWithIdToken({ provider: 'apple', token: idToken, nonce: rawNonce });
+        if (error) throw error;
+        const p = r.profile || {};
+        const fullName = [p.givenName, p.familyName].filter(Boolean).join(' ').trim();
+        const user = data && data.user;
+        if (fullName && user) {
+            const fallback = (user.email || '').split('@')[0];
+            db.from('profiles').select('display_name').eq('id', user.id).maybeSingle().then(({ data: prof }) => {
+                if (!prof || !prof.display_name || prof.display_name === fallback) {
+                    return db.from('profiles').update({ display_name: fullName }).eq('id', user.id);
+                }
+            }).catch(() => {});
+        }
+    } catch (e) {
+        if (isUserCancel(e)) return;
+        showToast('Apple sign-in failed: ' + ((e && e.message) || e), 'error');
     }
 }
 

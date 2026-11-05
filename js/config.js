@@ -20,6 +20,10 @@ const PUBLIC_APP_ORIGIN = 'https://app.fairshare.social';
 // > Clients). Native Google sign-in on Android hands Supabase an ID token
 // minted for this client. Not a secret; it ships in the app.
 const GOOGLE_WEB_CLIENT_ID = '397095849055-asjsmj5uetmjlirbcog220kqetqgj3dv.apps.googleusercontent.com';
+// Google OAuth "iOS" client ID for the iPhone app (same console, type iOS,
+// bundle social.fairshare.union). Its reversed form is also registered as a
+// URL scheme in ios/App/App/Info.plist so Google can hand control back.
+const GOOGLE_IOS_CLIENT_ID = '';
 
 function publicAppUrl(pathAndQuery = '/') {
   if (IS_NATIVE) {

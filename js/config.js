@@ -23,7 +23,7 @@ const GOOGLE_WEB_CLIENT_ID = '397095849055-asjsmj5uetmjlirbcog220kqetqgj3dv.apps
 // Google OAuth "iOS" client ID for the iPhone app (same console, type iOS,
 // bundle social.fairshare.union). Its reversed form is also registered as a
 // URL scheme in ios/App/App/Info.plist so Google can hand control back.
-const GOOGLE_IOS_CLIENT_ID = '';
+const GOOGLE_IOS_CLIENT_ID = '397095849055-7er0a6l6l1kstu9ri0trb67i1r8q7b2o.apps.googleusercontent.com';
 
 function publicAppUrl(pathAndQuery = '/') {
   if (IS_NATIVE) {

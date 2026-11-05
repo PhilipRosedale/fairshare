@@ -10,6 +10,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    /// Names the scene delegate for the one application scene (Capacitor 8.5+).
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: "Default Configuration",
+                                          sessionRole: connectingSceneSession.role)
+        config.delegateClass = SceneDelegate.self
+        return config
+    }
+
     /// Let the Capacitor bridge control allowed orientations (used by @capacitor/screen-orientation).
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         guard let root = window?.rootViewController as? CAPBridgeViewController else {
@@ -64,14 +74,33 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 
-/// UIScene lifecycle is required for apps built with the iOS 27 SDK.
-/// The window and root view controller come from Main.storyboard (UISceneStoryboardFile).
+/// UIScene lifecycle. Required by the iOS 27 SDK and by Capacitor 8.5+.
+/// The window and root view controller are created here in code (the
+/// storyboard is still referenced by the scene manifest, as in Capacitor's
+/// own template). URL opens and universal links now arrive here, and are
+/// forwarded to Capacitor through SceneDelegateProxy.
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+
+        window = UIWindow(windowScene: windowScene)
+        window?.rootViewController = BounceViewController()
+        window?.makeKeyAndVisible()
+
         // Keep AppDelegate.window pointing at the live window (used for orientation handling).
         (UIApplication.shared.delegate as? AppDelegate)?.window = window
+
+        SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
 }

@@ -952,16 +952,44 @@ body {
 /* .member-sponsor already claims the row's free space; a second auto margin
    would split that space and unpin the sponsor label from the right edge. */
 .member-sponsor + .member-tx-flow { margin-left: 0; }
-.member-more {
-    margin-left: 0.4rem;
-    flex-shrink: 0;
-    width: 28px; height: 28px;
-    border: 0; border-radius: 50%;
-    background: transparent; color: var(--dark-gray);
-    font-size: 1.1rem; line-height: 1;
-    cursor: pointer;
+.member-item-btn {
+    width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--light-gray);
+    font: inherit; color: inherit; cursor: pointer; border-radius: 0;
 }
-.member-more:hover { background: var(--light-gray); }
+.member-item-btn:last-child { border-bottom: none; }
+.member-item-btn:active { background: var(--light-gray); }
+
+/* Member sheet */
+.member-sheet { position: fixed; inset: 0; z-index: 3100; }
+.member-sheet.hidden { display: none; }
+.member-sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0); transition: background .18s; }
+.member-sheet.open .member-sheet-scrim { background: rgba(0,0,0,.35); }
+.member-sheet-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; max-width: 480px; margin: 0 auto;
+    background: #fff; border-radius: 20px 20px 0 0;
+    padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    transform: translateY(100%); transition: transform .22s cubic-bezier(.2,.8,.2,1);
+    box-shadow: 0 -8px 30px rgba(0,0,0,.15);
+}
+.member-sheet.open .member-sheet-panel { transform: translateY(0); }
+.member-sheet-grab { width: 38px; height: 4px; border-radius: 2px; background: #ddd; margin: 0 auto 14px; }
+.member-sheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.member-sheet-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.member-sheet-avatar.placeholder { background: var(--medium-gray); color: var(--dark-gray); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.2rem; }
+.member-sheet-name { font-size: 1.1rem; font-weight: 600; }
+.member-sheet-you { font-size: .75rem; font-weight: 500; color: var(--dark-gray); background: var(--light-gray); border-radius: 999px; padding: 1px 8px; margin-left: 4px; vertical-align: middle; }
+.member-sheet-sub { font-size: .85rem; color: var(--dark-gray); margin-top: 2px; }
+.member-sheet-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--light-gray); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
+.member-sheet-stats > div:not(.member-sheet-stats-note) { display: flex; flex-direction: column; }
+.member-sheet-stats .k { font-size: .72rem; color: var(--dark-gray); text-transform: uppercase; letter-spacing: .03em; }
+.member-sheet-stats .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.member-sheet-stats .v.in { color: #1b7f3b; } .member-sheet-stats .v.out { color: #a33; }
+.member-sheet-stats-note { grid-column: 1 / -1; font-size: .72rem; color: var(--dark-gray); }
+.member-sheet-actions { display: flex; flex-direction: column; gap: 8px; }
+.member-sheet-btn { width: 100%; padding: 12px; font-size: .95rem; }
+.member-sheet-hint { font-size: .85rem; color: var(--dark-gray); text-align: center; padding: 4px 0 2px; }
+.member-sheet-btn.member-sheet-danger { color: #b00020; border-color: #e6b3bb; margin-top: 6px; }
+.member-sheet-btn.member-sheet-danger:hover:not(:disabled) { background: #fff5f6; }
 
 /* Removal votes (Members tab) */
 .removal-h { color: var(--accent-color); margin: 0 0 0.5rem; }

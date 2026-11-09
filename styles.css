@@ -952,6 +952,36 @@ body {
 /* .member-sponsor already claims the row's free space; a second auto margin
    would split that space and unpin the sponsor label from the right edge. */
 .member-sponsor + .member-tx-flow { margin-left: 0; }
+.member-more {
+    margin-left: 0.4rem;
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border: 0; border-radius: 50%;
+    background: transparent; color: var(--dark-gray);
+    font-size: 1.1rem; line-height: 1;
+    cursor: pointer;
+}
+.member-more:hover { background: var(--light-gray); }
+
+/* Removal votes (Members tab) */
+.removal-h { color: var(--accent-color); margin: 0 0 0.5rem; }
+#removalVotesContent { margin-bottom: 1.25rem; }
+.removal-card {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.75rem 0.85rem; margin-bottom: 0.5rem;
+    border: 1px solid #f1c2c7; background: #fff5f6; border-radius: 12px;
+}
+.removal-card.is-me { border-color: #f0d08a; background: #fff8e6; }
+.removal-main { flex: 1; min-width: 0; }
+.removal-title { font-size: 0.95rem; }
+.removal-meta { font-size: 0.78rem; color: var(--dark-gray); margin-top: 0.15rem; }
+.removal-reason { font-size: 0.85rem; margin-top: 0.35rem; font-style: italic; color: #444; }
+.removal-action { flex-shrink: 0; }
+.removal-you { font-size: 0.78rem; color: var(--dark-gray); }
+.removal-explain { color: var(--dark-gray); font-size: 0.9rem; margin: 0.25rem 0 0.9rem; }
+.btn-ghost { background: transparent; color: var(--dark-gray); border: 1px solid var(--medium-gray); }
+.btn-ghost:hover:not(:disabled) { background: var(--light-gray); }
+.modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem; }
 .member-tx-flow > span { min-width: 4.5em; text-align: right; }
 .member-tx-in { color: var(--green); }
 .member-tx-out { color: var(--red); }

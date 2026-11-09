@@ -39,9 +39,9 @@ function renderRemovalVotes() {
     el.innerHTML = `<h4 class="removal-h">Removal votes</h4>` + removalProposals.map(p => {
         const left = removalDaysLeft(p.window_end);
         const meta = [`${p.votes} of ${p.threshold} votes`, left].filter(Boolean).join(' · ');
-        let action;
+        let action = '';
         if (p.is_me) {
-            action = `<span class="removal-you">You can't vote on this one</span>`;
+            // No button for the person being voted on; the note goes in the text.
         } else if (p.i_proposed) {
             action = `<button class="btn btn-small btn-ghost" onclick="withdrawRemoval('${p.id}')">Withdraw</button>`;
         } else if (p.i_voted) {
@@ -52,10 +52,10 @@ function renderRemovalVotes() {
         return `<div class="removal-card${p.is_me ? ' is-me' : ''}">
             <div class="removal-main">
                 <div class="removal-title">${p.is_me ? 'A vote to remove <strong>you</strong> is open' : `Remove <strong>${esc(p.target_name)}</strong>?`}</div>
-                <div class="removal-meta">Proposed by ${esc(p.proposer_name)} · ${meta}</div>
+                <div class="removal-meta">Proposed by ${esc(p.proposer_name)} · ${meta}${p.is_me ? ' · you cannot vote on this one' : ''}</div>
                 ${p.reason ? `<div class="removal-reason">“${esc(p.reason)}”</div>` : ''}
             </div>
-            <div class="removal-action">${action}</div>
+            ${action ? `<div class="removal-action">${action}</div>` : ''}
         </div>`;
     }).join('');
 }

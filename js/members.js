@@ -76,6 +76,10 @@ async function loadMembersList() {
             <span class="member-name">${esc(displayName)}</span>
             ${sponsorLabel ? `<span class="member-sponsor">${sponsorLabel}</span>` : ''}
             ${flowHtml}
+            ${m.user_id === currentUser?.id
+                ? '<span class="ft-open-btn-spacer" aria-hidden="true"></span>'
+                : familyTreeButtonHtml(m.user_id, displayName)}
         </div>`;
     }).join('');
+    if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
 }

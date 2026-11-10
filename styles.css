@@ -3540,103 +3540,111 @@ a.contact-shared-group-link:active {
     height: 22px;
 }
 
-/* Family tree in contact details */
-.family-tree { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--light-gray); }
-.family-tree-title { font-size: 0.8rem; font-weight: 600; color: var(--dark-gray); margin-bottom: 0.5rem; }
-.family-tree-loading { font-size: 0.8rem; color: var(--dark-gray); }
+/* Family tree popup (openFamilyTree in contacts.js) */
+.ft-open-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--dark-gray);
+    cursor: pointer;
+}
+.ft-open-btn:hover,
+.ft-open-btn:focus-visible { background: var(--light-gray); color: var(--primary-color); }
+.ft-open-btn .lucide-icon { width: 16px; height: 16px; }
+.ft-open-btn-spacer { width: 28px; flex-shrink: 0; }
+.member-item > .ft-open-btn,
+.member-item > .ft-open-btn-spacer { margin-left: auto; }
+.member-sponsor ~ .ft-open-btn,
+.member-sponsor ~ .ft-open-btn-spacer,
+.member-tx-flow ~ .ft-open-btn,
+.member-tx-flow ~ .ft-open-btn-spacer { margin-left: 0.25rem; }
+#contactDetailsScreen .cd-hero-name-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+#contactDetailsScreen .cd-hero-name-row .cd-hero-name { min-width: 0; }
+
+.family-tree-caption {
+    font-size: 0.85rem;
+    color: var(--dark-gray);
+    text-align: center;
+    margin-bottom: 1rem;
+}
+.family-tree-loading { font-size: 0.85rem; color: var(--dark-gray); text-align: center; padding: 1rem 0; }
 .family-tree-diagram {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    justify-content: center;
     align-items: center;
-    font-size: 0.8rem;
+    max-width: 360px;
+    margin: 0 auto;
 }
 .ft-branch {
     display: flex;
     flex-direction: column;
     align-items: center;
+    min-width: 0;
 }
 .ft-node {
-    padding: 0.25rem 0.6rem;
-    border-radius: 4px;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
     background: var(--light-gray);
-    margin: 2px 0;
+    border: 2px solid transparent;
+    max-width: 100%;
     white-space: nowrap;
-    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
 }
 .ft-node.ft-lca {
     background: var(--primary-color);
     color: var(--white);
     font-weight: 600;
 }
-.ft-node.ft-you {
-    border: 2px solid var(--primary-color);
-    font-weight: 600;
+.ft-node-link {
+    display: block;
+    font: inherit;
+    font-size: 0.85rem;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
-.ft-node.ft-them {
-    border: 2px solid #d63384;
-    font-weight: 600;
-}
-.ft-connector { width: 2px; height: 10px; background: var(--medium-gray); }
-.ft-junction {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-.ft-junction-bar {
-    height: 2px;
-    background: var(--medium-gray);
-    align-self: stretch;
-    margin: 0 50%;
-}
+.ft-node-link:hover,
+.ft-node-link:focus-visible { filter: brightness(0.92); }
+.ft-node.ft-you { border-color: var(--primary-color); font-weight: 600; }
+.ft-node.ft-them { border-color: #d63384; font-weight: 600; }
+.ft-connector { width: 2px; height: 14px; background: var(--medium-gray); flex-shrink: 0; }
+/* Each branch draws its half of the horizontal bar, so the bar always
+   joins the two column centres regardless of name widths. */
 .ft-branches {
     display: flex;
-    gap: 1.5rem;
     align-items: flex-start;
-}
-.ft-branches.ft-single-right,
-.ft-branches.ft-single-left {
     width: 100%;
-    max-width: 230px;
-    justify-content: space-between;
 }
-.ft-branch-empty {
-    min-width: 100px;
+.ft-branches > .ft-branch {
+    position: relative;
+    flex: 1 1 0;
+    padding: 0 0.25rem;
 }
-.ft-split-bar {
-    display: flex;
-    width: 100%;
-    max-width: 210px;
-}
-.ft-split-bar div {
-    flex: 1;
+.ft-branches > .ft-branch::before {
+    content: '';
+    position: absolute;
+    top: 0;
     height: 2px;
     background: var(--medium-gray);
 }
-.ft-branch-connector {
-    width: 2px;
-    height: 10px;
-    background: var(--medium-gray);
-}
-.ft-top-bar {
-    display: flex;
-    align-items: flex-end;
-}
-.ft-top-bar-line {
-    height: 2px;
-    background: var(--medium-gray);
-    flex: 1;
-}
-.ft-top-bar-stem {
-    width: 2px;
-    height: 10px;
-    background: var(--medium-gray);
-}
+.ft-branches > .ft-branch:first-child::before { left: 50%; right: 0; }
+.ft-branches > .ft-branch:last-child::before { left: 0; right: 50%; }
 /* Bottom bar — above chat input bar so center handshake sits on top */
 .bottom-bar {
     position: fixed;

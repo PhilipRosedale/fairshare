@@ -1283,10 +1283,6 @@ function renderContactRow(contact, profile, shared, maxTrustScore) {
                         <div id="contactSponsorName-${cid}" class="pref-sponsor-name">${profile.sponsor_id ? 'Loading sponsor...' : 'Root user (no sponsor)'}</div>
                     </div>
                 </div>
-                <div class="family-tree" id="ft-${cid}">
-                    <div class="family-tree-title">Family Tree</div>
-                    <div class="family-tree-loading">Loading…</div>
-                </div>
             </div>
         </div>`;
 }
@@ -1535,37 +1531,87 @@ async function loadSharedTrust(contactId) {
     }
 }
 
-// Family tree: loads ancestor chains for both users and renders the shared tree
+// Family tree popup: shows the sponsorship lines from the nearest common
+// ancestor (sponsor) down to you and to another user.
 const familyTreeCache = {};
-async function loadFamilyTree(contactId) {
-    const container = document.getElementById('ft-' + contactId);
-    if (!container || !currentUser) return;
+let familyTreeOpenFor = null;
 
-    // Don't reload if already rendered
-    if (container.dataset.loaded === '1') return;
+function familyTreeButtonHtml(userId, name, extraClass = '') {
+    return `<button type="button" class="ft-open-btn ${extraClass}"
+        title="Family tree" aria-label="Show family tree with ${esc(name || 'this person')}"
+        onclick="event.stopPropagation(); openFamilyTree('${esc(userId)}', '${esc(name || '')}')">
+        <i data-lucide="network" aria-hidden="true"></i>
+    </button>`;
+}
+
+async function openFamilyTree(userId, name) {
+    const overlay = document.getElementById('modalOverlay');
+    const body = document.getElementById('modalBody');
+    if (!userId || !currentUser || !overlay || !body) return;
+
+    familyTreeOpenFor = userId;
+    body.innerHTML = `
+        <h3>Family Tree</h3>
+        <div class="family-tree" id="familyTreeBody">
+            <div class="family-tree-loading">Loading…</div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+        </div>
+    `;
+    overlay.classList.remove('hidden');
+
+    const getChain = async (id) => {
+        if (familyTreeCache[id]) return familyTreeCache[id];
+        const { data, error } = await db.rpc('get_ancestor_chain', { p_user_id: id });
+        if (error) throw error;
+        const chain = data || [];
+        if (chain.length > 0) familyTreeCache[id] = chain;
+        return chain;
+    };
 
     try {
-        const [myChainRes, theirChainRes] = await Promise.all([
-            familyTreeCache[currentUser.id]
-                ? Promise.resolve({ data: familyTreeCache[currentUser.id], error: null })
-                : db.rpc('get_ancestor_chain', { p_user_id: currentUser.id }),
-            db.rpc('get_ancestor_chain', { p_user_id: contactId })
-        ]);
-
-        const myChain = myChainRes.data || [];
-        const theirChain = theirChainRes.data || [];
-
-        if (myChain.length > 0) familyTreeCache[currentUser.id] = myChain;
-
-        container.dataset.loaded = '1';
-        renderFamilyTree(container, myChain, theirChain, contactId);
+        const [myChain, theirChain] = await Promise.all([getChain(currentUser.id), getChain(userId)]);
+        const contactIds = await familyTreeContactIds([...myChain, ...theirChain].map(n => n?.id));
+        const container = document.getElementById('familyTreeBody');
+        if (familyTreeOpenFor !== userId || !container) return;
+        renderFamilyTree(container, myChain, theirChain, name, contactIds);
     } catch (e) {
         console.error('Family tree error:', e);
-        container.innerHTML = '<div class="family-tree-title">Family Tree</div><div class="family-tree-loading">Could not load tree.</div>';
+        const container = document.getElementById('familyTreeBody');
+        if (familyTreeOpenFor !== userId || !container) return;
+        container.innerHTML = '<div class="family-tree-loading">Could not load family tree.</div>';
     }
 }
 
-function renderFamilyTree(container, myChain, theirChain, contactId) {
+// Which of the given user ids are the current user's contacts. Failure just
+// means no names are clickable; the tree itself still renders.
+async function familyTreeContactIds(ids) {
+    const wanted = [...new Set(ids.filter(id => id && id !== currentUser.id))];
+    if (!wanted.length) return new Set();
+    if (contactsLoadedRows && contactsLoadedRows.length > 0) {
+        const all = new Set(contactsLoadedRows.map(r => r.contact?.contact_id));
+        return new Set(wanted.filter(id => all.has(id)));
+    }
+    try {
+        const { data, error } = await db.from('contacts')
+            .select('contact_id')
+            .eq('user_id', currentUser.id)
+            .in('contact_id', wanted);
+        if (error) throw error;
+        return new Set((data || []).map(r => r.contact_id));
+    } catch (e) {
+        console.error('Family tree contacts lookup error:', e);
+        return new Set();
+    }
+}
+
+function openFamilyTreeContact(contactId) {
+    closeModal({ refreshContactList: false });
+    openContactDetailsById(contactId);
+}
+
+function renderFamilyTree(container, myChain, theirChain, theirName, contactIds = new Set()) {
     const normalizeAncestorChain = (chain) => {
         const out = [];
         const seen = new Set();
@@ -1579,96 +1625,64 @@ function renderFamilyTree(container, myChain, theirChain, contactId) {
         return out;
     };
 
+    // Chains run leaf-first: [self, sponsor, sponsor's sponsor, ...].
     const safeMyChain = normalizeAncestorChain(myChain);
     const safeTheirChain = normalizeAncestorChain(theirChain);
     const theirIdSet = new Set(safeTheirChain.map(n => n.id));
-    let lcaIndex = -1;
-    for (let i = 0; i < safeMyChain.length; i++) {
-        if (theirIdSet.has(safeMyChain[i].id)) {
-            lcaIndex = i;
-            break;
-        }
-    }
+    const lcaIndex = safeMyChain.findIndex(n => theirIdSet.has(n.id));
+    const theirLcaIndex = lcaIndex < 0 ? -1 : safeTheirChain.findIndex(n => n.id === safeMyChain[lcaIndex].id);
 
-    if (lcaIndex < 0) {
-        container.innerHTML = '<div class="family-tree-title">Family Tree</div><div class="family-tree-loading" style="font-style:italic;">No shared sponsors found.</div>';
+    if (lcaIndex < 0 || theirLcaIndex < 0) {
+        container.innerHTML = '<div class="family-tree-loading">No common sponsor found.</div>';
         return;
     }
 
-    const lcaId = safeMyChain[lcaIndex].id;
-    const theirLcaIndex = safeTheirChain.findIndex(n => n.id === lcaId);
-    if (theirLcaIndex < 0) {
-        container.innerHTML = '<div class="family-tree-title">Family Tree</div><div class="family-tree-loading" style="font-style:italic;">No shared sponsors found.</div>';
-        return;
-    }
-
-    // Build root -> ... -> LCA vertical chain
-    const sharedTopPath = safeMyChain.slice(lcaIndex).reverse();
-    // Build LCA child -> ... -> leaves (you/contact)
-    const myDescPath = safeMyChain.slice(0, lcaIndex).reverse();
-    const theirDescPath = safeTheirChain.slice(0, theirLcaIndex).reverse();
+    const lca = safeMyChain[lcaIndex];
+    const myId = safeMyChain[0]?.id;
+    const theirId = safeTheirChain[0]?.id;
+    // Paths run from just below the common ancestor down to each leaf.
+    const myPath = safeMyChain.slice(0, lcaIndex).reverse();
+    const theirPath = safeTheirChain.slice(0, theirLcaIndex).reverse();
 
     const nodeHtml = (node, cls = '') => {
-        const name = esc(node.display_name || 'Unknown');
-        return `<div class="ft-node ${cls}" title="${name}">${name}</div>`;
+        const isYou = node.id === myId;
+        const fullName = node.display_name || 'Unknown';
+        const label = isYou ? 'You' : fullName;
+        const roleCls = isYou ? 'ft-you' : (node.id === theirId ? 'ft-them' : '');
+        if (!isYou && contactIds.has(node.id)) {
+            return `<button type="button" class="ft-node ft-node-link ${roleCls} ${cls}" title="${esc(fullName)}"
+                onclick="openFamilyTreeContact('${esc(node.id)}')">${esc(label)}</button>`;
+        }
+        return `<div class="ft-node ${roleCls} ${cls}" title="${esc(fullName)}">${esc(label)}</div>`;
     };
-
     const connectorHtml = '<div class="ft-connector"></div>';
-    const buildPathHtml = (pathNodes, leafClass) => {
-        if (!pathNodes.length) return '';
-        let html = '';
-        for (let i = 0; i < pathNodes.length; i++) {
-            if (i > 0) html += connectorHtml;
-            const cls = i === pathNodes.length - 1 ? leafClass : '';
-            html += nodeHtml(pathNodes[i], cls);
-        }
-        return html;
-    };
+    const pathHtml = (nodes) => nodes.map(n => connectorHtml + nodeHtml(n)).join('');
 
-    let sharedHtml = '';
-    for (let i = 0; i < sharedTopPath.length; i++) {
-        if (i > 0) sharedHtml += connectorHtml;
-        const cls = i === sharedTopPath.length - 1 ? 'ft-lca' : '';
-        sharedHtml += nodeHtml(sharedTopPath[i], cls);
-    }
-
-    const leftBranch = buildPathHtml(myDescPath, 'ft-you');
-    const rightBranch = buildPathHtml(theirDescPath, 'ft-them');
-    const hasLeft = myDescPath.length > 0;
-    const hasRight = theirDescPath.length > 0;
-    const branchStem = (hasLeft || hasRight)
-        ? `${connectorHtml}<div class="ft-split-bar"><div></div><div></div></div>`
-        : '';
-
-    // Special-case root->descendant: only show right branch below root chain.
-    let branchHtml = '';
-    if (hasLeft || hasRight) {
-        if (!hasLeft && hasRight) {
-            branchHtml = `<div class="ft-branches ft-single-right">
-                <div class="ft-branch ft-branch-empty"></div>
-                <div class="ft-branch">${rightBranch}</div>
-            </div>`;
-        } else if (hasLeft && !hasRight) {
-            branchHtml = `<div class="ft-branches ft-single-left">
-                <div class="ft-branch">${leftBranch}</div>
-                <div class="ft-branch ft-branch-empty"></div>
-            </div>`;
-        } else {
-            branchHtml = `<div class="ft-branches">
-                <div class="ft-branch">${leftBranch}</div>
-                <div class="ft-branch">${rightBranch}</div>
-            </div>`;
-        }
-    }
-
-    const treeHtml = `<div class="family-tree-title">Family Tree</div>
-        <div class="family-tree-diagram">
-            <div class="ft-branch">${sharedHtml}</div>
-            ${branchStem}
-            ${branchHtml}
+    let branchesHtml;
+    if (myPath.length && theirPath.length) {
+        branchesHtml = `${connectorHtml}<div class="ft-branches">
+            <div class="ft-branch">${pathHtml(myPath)}</div>
+            <div class="ft-branch">${pathHtml(theirPath)}</div>
         </div>`;
+    } else {
+        // One of you is the other's ancestor, so there is a single straight line.
+        branchesHtml = pathHtml(myPath.length ? myPath : theirPath);
+    }
 
-    container.innerHTML = treeHtml;
+    const steps = myPath.length + theirPath.length;
+    const lcaName = lca.display_name || 'Unknown';
+    const caption = lca.id === myId
+        ? `${esc(theirName || 'They')} joined through your sponsorship line`
+        : lca.id === theirId
+            ? `You joined through ${esc(lcaName)}'s sponsorship line`
+            : `Nearest common sponsor: <strong>${esc(lcaName)}</strong>`;
+
+    container.innerHTML = `
+        <div class="family-tree-caption">${caption} · ${steps} step${steps === 1 ? '' : 's'} apart</div>
+        <div class="family-tree-diagram">
+            ${nodeHtml(lca, 'ft-lca')}
+            ${branchesHtml}
+        </div>`;
 }
 
 // ============================================================================

@@ -159,7 +159,10 @@ function renderContactDetailsScreen(root, row) {
             <div class="cd-hero-row">
                 ${avatarHtml}
                 <div class="cd-hero-meta">
-                    <div class="cd-hero-name">${esc(name)}</div>
+                    <div class="cd-hero-name-row">
+                        <div class="cd-hero-name">${esc(name)}</div>
+                        ${familyTreeButtonHtml(id, name)}
+                    </div>
                     ${contactLinesHtml}
                     <div class="cd-hero-known-row">
                         <span class="cd-hero-known-main">

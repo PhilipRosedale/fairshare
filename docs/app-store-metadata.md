@@ -16,7 +16,7 @@ contacts,QR,meet,trust,groups,chat,vouch,social,endorse,nearby,ledger,handshakes
 
 After you deploy the static site (e.g. GitHub Pages), set **Support URL** to:
 
-`https://app.fairshare.social/support.html`
+`https://union42.net/support.html`
 
 That page is public HTML with no sign-in. It explains how to get help and links to Terms and Privacy.
 
@@ -24,9 +24,9 @@ That page is public HTML with no sign-in. It explains how to get help and links 
 
 Set **Marketing URL** to:
 
-`https://app.fairshare.social/marketing.html`
+`https://union42.net/marketing.html`
 
-Use the same domain as the live app (`app.fairshare.social` per [app-store-review-notes.md](./app-store-review-notes.md)). If you later host a full marketing site elsewhere, replace this URL in App Store Connect only—no app update required.
+Use the same domain as the live app (`union42.net` per [app-store-review-notes.md](./app-store-review-notes.md)). If you later host a full marketing site elsewhere, replace this URL in App Store Connect only—no app update required.
 
 ## Routing App Coverage File
 

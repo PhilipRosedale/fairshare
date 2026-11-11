@@ -14,7 +14,7 @@ const NATIVE_PLATFORM = IS_NATIVE && typeof window.Capacitor.getPlatform === 'fu
 // links, etc.). On the iOS Capacitor shell window.location.origin resolves to
 // "capacitor://localhost" which is meaningless to anyone else, so we fall back
 // to the production host in that case.
-const PUBLIC_APP_ORIGIN = 'https://app.fairshare.social';
+const PUBLIC_APP_ORIGIN = 'https://union42.net';
 
 // Google OAuth "Web application" client ID (Google Cloud > Google Auth Platform
 // > Clients). Native Google sign-in on Android hands Supabase an ID token

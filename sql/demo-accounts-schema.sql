@@ -312,7 +312,7 @@ BEGIN
            sponsor_id = v_owner_id,
            is_demo_account = true,
            signup_token = NULL,
-           profile_image_url = 'https://app.fairshare.social/assets/demo-portraits/'
+           profile_image_url = 'https://union42.net/assets/demo-portraits/'
              || (v_demo->>'slug') || '.jpg'
      WHERE id = v_uid;
 
@@ -453,7 +453,7 @@ $$;
 
 -- 7b. Set profile_image_url from static assets (no service-role upload needed)
 CREATE OR REPLACE FUNCTION public.admin_apply_demo_portraits(
-  p_origin text DEFAULT 'https://app.fairshare.social'
+  p_origin text DEFAULT 'https://union42.net'
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -462,7 +462,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_admin_id uuid := 'a8253eea-e76a-46d1-a92d-6fe36911f038';
-  v_origin text := rtrim(coalesce(nullif(trim(p_origin), ''), 'https://app.fairshare.social'), '/');
+  v_origin text := rtrim(coalesce(nullif(trim(p_origin), ''), 'https://union42.net'), '/');
   v_accounts jsonb := '[
     {"slug":"elena-vasquez","display_name":"Elena Vasquez"},
     {"slug":"marcus-chen","display_name":"Marcus Chen"},

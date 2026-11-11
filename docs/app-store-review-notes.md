@@ -76,7 +76,7 @@ Deletion is irreversible.
 | Photo Library (`NSPhotoLibraryUsageDescription`) | Picking a profile photo, group logo, or suggested-picture from the user's library | Profile screen → tap avatar; Group screen → tap group logo; Suggest-picture flow on contact details |
 | Location When-In-Use (`NSLocationWhenInUseUsageDescription`) | Showing nearby Union members the user has explicitly chosen to be alerted about; reverse-geocoding for selfies on the Globe screen | Bottom-bar Globe; Contact details → "Notify if nearby" toggle |
 | Location Always (`NSLocationAlwaysAndWhenInUseUsageDescription`) | Continuing live location share to a specific contact while the app is backgrounded — only after the user explicitly toggles "Share My Location" with a duration | Contact details → "Share My Location" toggle (For an Hour / Day / Week / Indefinitely) |
-| `UIBackgroundModes` → `location` | Same as above — required so the location share keeps streaming when the user puts the phone away | iOS only flips `allowsBackgroundLocationUpdates = true` when the user holds Always authorization AND has at least one active outbound share (see `BackgroundLocationPlugin.swift`) |
+| `UIBackgroundModes` → `location` | Same as above — lets a single location fix complete when iOS wakes the app in the background for a significant location change, a visit, or a geofence exit while a share is active. Union does not run continuous GPS in the background | iOS only flips `allowsBackgroundLocationUpdates = true` when the user holds Always authorization AND has at least one active outbound share (see `BackgroundLocationPlugin.swift`) |
 | `UIBackgroundModes` → `remote-notification` | APNs push for new chat messages, contact requests, and nearby alerts | Capacitor Push Notifications plugin |
 
 ### Background location demonstration
@@ -87,9 +87,9 @@ To exercise the background-location code path:
 2. Open any contact → toggle **"Share My Location"** → choose any duration.
 3. Grant **Allow Always** (the system will prompt; you can also raise it later in Settings → Privacy → Location → Union → Always).
 4. Lock the device and walk a short distance, or use Xcode's **Simulate Location** to move a few hundred meters.
-5. Re-open the app on the second test device (or the web at https://app.fairshare.social) signed in as the contact you shared with — the moving pin updates in near-real-time.
+5. Re-open the app on the second test device (or the web at https://app.fairshare.social) signed in as the contact you shared with — the pin updates each time the sharer moves roughly 150 m, arrives at or leaves a place, or opens Union.
 
-When the user toggles **Share My Location** off, or the chosen duration expires, the app immediately stops calling `startUpdatingLocation` and sets `allowsBackgroundLocationUpdates = false`.
+When the user toggles **Share My Location** off, or the chosen duration expires, the app stops significant-change, visit, and geofence monitoring and sets `allowsBackgroundLocationUpdates = false`.
 
 ---
 

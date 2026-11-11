@@ -155,6 +155,12 @@ function canReclaimLocationShareOwnership() {
     return IS_NATIVE && NATIVE_PLATFORM !== 'android';
 }
 
+// iOS uploads from the native plugin (passive wakes, no polling). Web and
+// Android have no native uploader yet, so they poll while the app is open.
+function hasNativeBackgroundLocation() {
+    return IS_NATIVE && NATIVE_PLATFORM !== 'android';
+}
+
 function checkAndStartLocationSharing() {
     const active = hasAnyActiveLocationShares();
     const outboundIds = Object.keys(locationSharesOutbound || {});
@@ -168,15 +174,18 @@ function checkAndStartLocationSharing() {
 }
 
 function startLocationSharingUpdates() {
-    if (locationSharingInterval) return;
+    if (locationSharingActive) return;
+    locationSharingActive = true;
 
     console.log('[location-sharing] startLocationSharingUpdates: IS_NATIVE=', IS_NATIVE,
         'outboundShares=', Object.keys(locationSharesOutbound || {}).length);
 
-    startNativeLocationSharing();
-
-    sendSharingLocationPoll();
-    locationSharingInterval = setInterval(sendSharingLocationPoll, LOCATION_SHARING_POLL_MS);
+    if (hasNativeBackgroundLocation()) {
+        startNativeLocationSharing();
+    } else {
+        sendSharingLocationPoll();
+        locationSharingInterval = setInterval(sendSharingLocationPoll, LOCATION_SHARING_POLL_MS);
+    }
     startShareRemainingTimer();
 }
 
@@ -242,9 +251,6 @@ async function startNativeLocationSharing() {
                 console.log('[location-sharing] native locationUpdate', pos);
                 nativeLocationLastPosition = { lat: pos.lat, lng: pos.lng };
                 nativeLocationLastAt = Date.now();
-                // Foreground fallback. The native plugin also writes accepted
-                // fixes directly so background suspension does not stop sharing.
-                sendSharingLocationUpdate(pos.lat, pos.lng);
             });
             startNativeLocationSharing._listenerAttached = true;
         }
@@ -328,7 +334,9 @@ async function logLocationSharingDiagnostics(context) {
     if (anyInstanceMismatch) {
         console.warn(prefix, label, 'source_instance_id does not match this device — uploads may be rejected by RLS.');
     }
-    if (ownLocation?._ageMinutes != null && ownLocation._ageMinutes >= 5 && hasAnyActiveLocationShares()) {
+    // iOS only uploads after movement or app open, so an old row is expected there.
+    if (!hasNativeBackgroundLocation() && ownLocation?._ageMinutes != null &&
+        ownLocation._ageMinutes >= 5 && hasAnyActiveLocationShares()) {
         console.warn(prefix, label, 'user_locations.updated_at is', ownLocation._ageMinutes, 'min old while sharing is active.');
     }
 
@@ -393,6 +401,7 @@ function maybeWarnNativeLocationSharingStatus(status) {
 }
 
 function stopLocationSharingUpdates() {
+    locationSharingActive = false;
     if (locationSharingInterval) {
         clearInterval(locationSharingInterval);
         locationSharingInterval = null;
@@ -415,13 +424,6 @@ function stopLocationSharingUpdates() {
 
 async function sendSharingLocationPoll() {
     if (!currentUser) return;
-    // Always request a fresh fix on every poll tick. We used to short-circuit
-    // on native whenever `nativeLocationLastPosition` was non-null, relying on
-    // the `locationUpdate` listener for updates. But Core Location's
-    // distanceFilter suppresses those events until the device moves ~100m, so
-    // a stationary user would keep the DB's `updated_at` fresh (via nearby
-    // tracking) while lat/lng stayed hours old — contacts then saw
-    // "updated just now" at the wrong location.
     try {
         console.log('[location-sharing] poll tick, requesting GPS');
         const pos = await getGPSLocation();

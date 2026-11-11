@@ -46,6 +46,7 @@ let locationSharesOutbound = {}; // contact_id -> { expires_at }
 let locationSharesInbound = {};  // contact_id -> { expires_at }
 let locationSharesChannel = null; // Realtime for location_shares changes
 let locationSharingInterval = null;
+let locationSharingActive = false;
 let contactLocationsChannel = null; // Realtime for user_locations of inbound sharers
 let contactLocationsPollInterval = null; // Fallback poll of inbound sharers' positions
 let shareRemainingTimer = null;

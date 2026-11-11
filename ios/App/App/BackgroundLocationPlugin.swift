@@ -3,8 +3,49 @@ import Capacitor
 import CoreLocation
 import UIKit
 
+/// Thin Capacitor bridge. All Core Location state lives in
+/// `LocationSharingService` so it survives background relaunches, which happen
+/// before (or without) the WebView and its plugins being created.
 @objc(BackgroundLocationPlugin)
-public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
+public class BackgroundLocationPlugin: CAPPlugin {
+    public override func load() {
+        LocationSharingService.shared.plugin = self
+    }
+
+    @objc func start(_ call: CAPPluginCall) {
+        LocationSharingService.shared.start(call)
+    }
+
+    @objc func stop(_ call: CAPPluginCall) {
+        LocationSharingService.shared.stop(call)
+    }
+
+    @objc func getStatus(_ call: CAPPluginCall) {
+        LocationSharingService.shared.getStatus(call)
+    }
+
+    @objc func getCurrentPosition(_ call: CAPPluginCall) {
+        LocationSharingService.shared.getCurrentPosition(call)
+    }
+
+    func emitLocationUpdate(_ location: CLLocation) {
+        notifyListeners("locationUpdate", data: [
+            "lat": location.coordinate.latitude,
+            "lng": location.coordinate.longitude
+        ])
+    }
+}
+
+/// Live location sharing modelled on Find My: no continuous GPS. While sharing,
+/// iOS wakes (or relaunches) the app for significant location changes, visits,
+/// and exits from a small geofence around the last fix; each wake takes one
+/// `requestLocation()` fix and uploads it. None of these show the blue
+/// background-location pill, and GPS stays off while the device is stationary.
+final class LocationSharingService: NSObject, CLLocationManagerDelegate {
+    static let shared = LocationSharingService()
+
+    weak var plugin: BackgroundLocationPlugin?
+
     private var locationManager: CLLocationManager?
     private var lastPosition: CLLocation?
     private var supabaseConfig: SupabaseLocationConfig?
@@ -12,11 +53,6 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     private var uploadInFlight = false
     private var locationUploadEnabled = false
     private var uploadRetryWorkItem: DispatchWorkItem?
-    /// While sharing, Core Location may not call `didUpdateLocations` for a long
-    /// time when `distanceFilter` suppresses callbacks for a stationary device.
-    /// Viewers key off `user_locations.updated_at`, so we periodically re-post the
-    /// last good fix with a fresh `updated_at` (same cadence as JS foreground poll).
-    private var stationaryUploadHeartbeatTimer: Timer?
     /// iOS 13+ never offers "Always" on the first location alert; the system only
     /// shows the upgrade sheet after `requestAlwaysAuthorization()` is called
     /// while status is already `authorizedWhenInUse`. We set this when we have
@@ -24,15 +60,19 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     /// delegate does not stack duplicate prompts; reset in `stop()`.
     private var didRequestAlwaysUpgradeThisSharingSession = false
     private var significantLocationMonitoringActive = false
+    private var visitMonitoringActive = false
+    private var geofenceCenter: CLLocation?
+    private var lastFixRequestAt: Date?
+    private var wakeBackgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let diagnosticsDefaultsKey = "BackgroundLocationUploadDiagnostics"
     private var lastUploadAt: Date?
     private var lastUploadHttpStatus: Int?
     private var lastUploadErrorSnippet: String?
-    private var lastHeartbeatAt: Date?
+    private var lastWakeAt: Date?
+    private var lastWakeReason: String?
     private var lastDidUpdateAt: Date?
     private var lastUploadedPosition: CLLocation?
     private var lastSuccessfulUploadAt: Date?
-    private var lastDidUpdateLogAt: Date?
 
     // Queue of pending one-shot getCurrentPosition calls waiting on a fresh fix.
     // Each entry pairs a call with the previous fix timestamp it considers
@@ -40,9 +80,6 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     private var pendingFreshCalls: [(call: CAPPluginCall, previousTimestamp: Date?)] = []
 
     // Maximum age of a cached fix before getCurrentPosition forces a refresh.
-    // Anything older risks sending stale coordinates to the server (e.g. when
-    // the device has been stationary and Core Location's distanceFilter has
-    // suppressed new updates).
     private let cachedLocationMaxAge: TimeInterval = 30
 
     // Hard deadline for a pending getCurrentPosition call waiting on a fresh
@@ -53,11 +90,10 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
 
     // Maximum age, in seconds, of a `CLLocation.timestamp` we'll accept from
     // Core Location. iOS often replays a cached fix (sometimes hours or days
-    // old, e.g. after the device travels with the app force-quit) when
-    // `startUpdatingLocation` first runs or when the app foregrounds. Those
-    // cached fixes were getting forwarded to JS as if they were "live", which
-    // is how a phone in Denver kept reporting San Francisco coordinates with
-    // a fresh `updated_at`.
+    // old, e.g. after the device travels with the app force-quit) when location
+    // services first start or when the app foregrounds. Those cached fixes were
+    // getting forwarded to JS as if they were "live", which is how a phone in
+    // Denver kept reporting San Francisco coordinates with a fresh `updated_at`.
     private let acceptedFixMaxAge: TimeInterval = 60
 
     // Reject fixes whose horizontal accuracy is non-positive (Core Location
@@ -66,12 +102,24 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     // check above is the main defense against stale-cache replay.
     private let minAcceptableHorizontalAccuracy: CLLocationAccuracy = 0
     private let locationUploadRetryDelay: TimeInterval = 15
-    /// Keep `js/constants.js` `APP_TIMING.FOREGROUND_LOCATION_POLL_MS` in sync.
-    private let stationaryLocationHeartbeatInterval: TimeInterval = 60
-    /// Minimum time between movement-driven uploads (heartbeat bypasses this).
+    /// Minimum time between uploads unless the device moved at least
+    /// `movementUploadThresholdMeters`.
     private let minimumUploadInterval: TimeInterval = 60
-    /// Upload before `minimumUploadInterval` only if the device moved at least this far.
     private let movementUploadThresholdMeters: CLLocationDistance = 10
+    /// Significant-change fixes are cell/Wi-Fi based and often several hundred
+    /// meters off; anything coarser than this gets one follow-up `requestLocation()`.
+    private let refineAccuracyThreshold: CLLocationAccuracy = 100
+    /// Rate limit for non-forced `requestLocation()` calls (refines, stale-cache
+    /// replays, relaunch) so a run of poor fixes cannot keep the GPS spinning.
+    private let minimumFixRequestInterval: TimeInterval = 20
+    /// Region monitoring is unreliable below ~100 m; exits are typically
+    /// reported after crossing the boundary by a further 20 m or more.
+    private let geofenceRadiusMeters: CLLocationDistance = 150
+    private let geofenceRecenterThresholdMeters: CLLocationDistance = 25
+    private let geofenceIdentifier = "union.locationSharing.geofence"
+    /// Background time requested for each wake so a cold relaunch has room for
+    /// a GPS fix plus the upload (the system grants ~10 s by default).
+    private let wakeWindowSeconds: TimeInterval = 25
 
     private struct SupabaseLocationConfig: Codable {
         let anonKey: String
@@ -85,26 +133,47 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 
     private let configDefaultsKey = "BackgroundLocationSupabaseConfig"
-    /// Default distance filter when not actively sharing live location.
-    private let idleDistanceFilterMeters: CLLocationDistance = 10
+    private let sharingActiveDefaultsKey = "BackgroundLocationSharingActive"
     private let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
+    private lazy var uploadSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        return URLSession(configuration: config)
+    }()
+
+    // MARK: - App lifecycle
+
+    /// Must run from `application(_:didFinishLaunchingWithOptions:)` so that a
+    /// background relaunch for a region exit, visit, or significant change has
+    /// a delegate to deliver the event to.
+    func handleAppLaunch() {
+        ensureLocationManager()
+        guard UserDefaults.standard.bool(forKey: sharingActiveDefaultsKey), supabaseConfig != nil else { return }
+        locationUploadEnabled = true
+        applyBackgroundUpdatesIfAuthorized()
+        armPassiveMonitoring()
+        logLocationRuntimeState(context: "appLaunch")
+    }
+
     // MARK: - Plugin methods
 
-    @objc func start(_ call: CAPPluginCall) {
+    func start(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.ensureLocationManager()
             guard self.updateSupabaseConfig(from: call) else {
-                self.locationUploadEnabled = false
+                self.setLocationUploadEnabled(false)
                 call.reject("Missing Supabase location upload config")
                 return
             }
-            self.locationUploadEnabled = true
+            self.setLocationUploadEnabled(true)
 
             let status = self.locationManager?.authorizationStatus ?? .notDetermined
             NSLog("[BackgroundLocation] start() called, authorizationStatus=\(self.describe(status))")
@@ -125,66 +194,61 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
             }
 
             self.applyBackgroundUpdatesIfAuthorized()
-            self.applySharingLocationConfiguration()
-            self.locationManager?.startUpdatingLocation()
-            NSLog("[BackgroundLocation] startUpdatingLocation called")
-            self.scheduleStationaryLocationHeartbeat()
+            self.armPassiveMonitoring()
+            self.requestFix(reason: "start", force: true)
             self.logLocationRuntimeState(context: "start")
             call.resolve()
         }
     }
 
-    @objc func stop(_ call: CAPPluginCall) {
+    func stop(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.locationUploadEnabled = false
+            self.setLocationUploadEnabled(false)
             self.didRequestAlwaysUpgradeThisSharingSession = false
             self.pendingUploadLocation = nil
             self.uploadRetryWorkItem?.cancel()
             self.uploadRetryWorkItem = nil
-            self.invalidateStationaryLocationHeartbeat()
-            self.restoreIdleLocationConfiguration()
+            self.disarmPassiveMonitoring()
+            self.applyBackgroundUpdatesIfAuthorized()
             self.locationManager?.stopUpdatingLocation()
             self.logLocationRuntimeState(context: "stop")
             call.resolve()
         }
     }
 
-    @objc func getStatus(_ call: CAPPluginCall) {
+    func getStatus(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
                 call.reject("Plugin not ready")
                 return
             }
             self.ensureLocationManager()
-            self.applyBackgroundUpdatesIfAuthorized()
             call.resolve(self.buildStatusPayload())
         }
     }
 
-    @objc func getCurrentPosition(_ call: CAPPluginCall) {
-        // Fresh enough? Return immediately. We require both a recent timestamp
-        // and a valid horizontal accuracy — Core Location returns negative
-        // accuracy for invalid/cached fixes, which we never want to write.
-        if let loc = lastPosition,
-           Date().timeIntervalSince(loc.timestamp) < cachedLocationMaxAge,
-           loc.horizontalAccuracy > minAcceptableHorizontalAccuracy {
-            call.resolve([
-                "lat": loc.coordinate.latitude,
-                "lng": loc.coordinate.longitude
-            ])
-            return
-        }
-
-        // Otherwise, kick location services to deliver a new fix and queue the
-        // call to resolve as soon as a newer `didUpdateLocations` arrives.
+    func getCurrentPosition(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
                 call.reject("Plugin not ready")
                 return
             }
-            self.ensureLocationManager()
 
+            // Fresh enough? Return immediately. We require both a recent timestamp
+            // and a valid horizontal accuracy — Core Location returns negative
+            // accuracy for invalid/cached fixes, which we never want to write.
+            if let loc = self.lastPosition,
+               Date().timeIntervalSince(loc.timestamp) < self.cachedLocationMaxAge,
+               loc.horizontalAccuracy > self.minAcceptableHorizontalAccuracy {
+                call.resolve([
+                    "lat": loc.coordinate.latitude,
+                    "lng": loc.coordinate.longitude
+                ])
+                return
+            }
+
+            self.ensureLocationManager()
             let previousTimestamp = self.lastPosition?.timestamp
             self.pendingFreshCalls.append((call, previousTimestamp))
 
@@ -196,46 +260,34 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
             // auth is requested later by `start()` when the user actually
             // turns on background location sharing.
             let status = self.locationManager?.authorizationStatus ?? .notDetermined
-            let shouldWaitForAuth: Bool
             switch status {
             case .notDetermined:
                 self.locationManager?.requestWhenInUseAuthorization()
-                shouldWaitForAuth = true
             case .denied, .restricted:
-                shouldWaitForAuth = true
+                break
             default:
-                shouldWaitForAuth = false
-            }
-
-            // Only ping Core Location for an immediate fix if we're already
-            // authorized; otherwise `locationManagerDidChangeAuthorization`
-            // will start updating once the user responds to the prompt, and
-            // the resulting `didUpdateLocations` will flush our pending call.
-            if !shouldWaitForAuth {
-                self.applyBackgroundUpdatesIfAuthorized()
-                self.locationManager?.startUpdatingLocation()
+                // One-shot only: `startUpdatingLocation()` here would leave the
+                // GPS running indefinitely after the caller is satisfied.
                 self.locationManager?.requestLocation()
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + self.freshFixDeadline) { [weak self] in
-                guard let self = self else { return }
-                // Time is up. flushPendingCalls(force: true) will reject any
-                // pending callers if we still don't have a sufficiently
-                // fresh fix — JS treats that as "no fix this poll" and
-                // skips the upsert, which is the desired behavior here.
-                self.flushPendingCalls(force: true)
+                // Time is up. flushPendingCalls(force: true) will resolve any
+                // pending callers with an empty payload if we still don't have
+                // a sufficiently fresh fix — JS treats that as "no fix this
+                // poll" and skips the upsert, which is the desired behavior.
+                self?.flushPendingCalls(force: true)
             }
         }
     }
 
     // MARK: - Delegate
 
-    public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         // Use the most recent acceptable fix. Core Location occasionally
         // hands back cached locations that are seconds — or, after travel
         // with the app force-quit, hours/days — old. We need to drop those
-        // before they get forwarded to JS, otherwise they end up in the DB
-        // stamped with a fresh `updated_at`.
+        // before they get forwarded to JS, otherwise they end up in the DB.
         guard let location = mostRecent(of: locations) else { return }
         let age = Date().timeIntervalSince(location.timestamp)
 
@@ -249,47 +301,58 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
         if age > acceptedFixMaxAge {
             NSLog("[BackgroundLocation] discarding stale cached fix age=\(String(format: "%.1f", age))s lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude)")
-            // Kick the manager so we get a real fix soon. requestLocation()
-            // is idempotent and forces Core Location to deliver a single
-            // fresh sample, which will overwrite the cached one.
-            manager.requestLocation()
+            if locationUploadEnabled || !pendingFreshCalls.isEmpty {
+                requestFix(reason: "staleCache", force: false)
+            }
             return
         }
 
         lastDidUpdateAt = Date()
         persistUploadDiagnostics()
         lastPosition = location
+        plugin?.emitLocationUpdate(location)
 
-        if shouldUploadLocation(location, bypassThrottle: false) {
-            NSLog("[BackgroundLocation] didUpdateLocations lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude) horizAcc=\(location.horizontalAccuracy)m age=\(String(format: "%.1f", age))s — uploading")
-            logLocationRuntimeState(context: "didUpdateLocations")
-            postLocationToSupabase(location, bypassThrottle: false)
-            notifyListeners("locationUpdate", data: [
-                "lat": location.coordinate.latitude,
-                "lng": location.coordinate.longitude
-            ])
-        } else if shouldLogThrottledDidUpdate() {
-            NSLog("[BackgroundLocation] didUpdateLocations (upload throttled, heartbeat will refresh updated_at)")
+        if locationUploadEnabled {
+            if UIApplication.shared.applicationState == .background {
+                beginWakeWindow(reason: "locationUpdate")
+            }
+            refreshGeofence(around: location)
+            if location.horizontalAccuracy > refineAccuracyThreshold {
+                requestFix(reason: "refine", force: false)
+            }
+            if shouldUploadLocation(location) {
+                NSLog("[BackgroundLocation] didUpdateLocations lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude) horizAcc=\(location.horizontalAccuracy)m age=\(String(format: "%.1f", age))s — uploading")
+                postLocationToSupabase(location)
+            }
         }
         flushPendingCalls(force: false)
     }
 
-    public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         NSLog("[BackgroundLocation] didFailWithError: \(error.localizedDescription)")
     }
 
-    public func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
-        NSLog("[BackgroundLocation] location updates paused by system — requesting fix and heartbeat upload")
-        manager.requestLocation()
-        uploadStationaryHeartbeatIfPossible()
+    func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
+        guard locationUploadEnabled else { return }
+        let kind = visit.departureDate == .distantFuture ? "arrival" : "departure"
+        beginWakeWindow(reason: "visit-\(kind)")
+        requestFix(reason: "visit-\(kind)", force: true)
     }
 
-    public func locationManagerDidResumeLocationUpdates(_ manager: CLLocationManager) {
-        NSLog("[BackgroundLocation] location updates resumed")
-        uploadStationaryHeartbeatIfPossible()
+    func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        guard region.identifier == geofenceIdentifier, locationUploadEnabled else { return }
+        beginWakeWindow(reason: "geofenceExit")
+        requestFix(reason: "geofenceExit", force: true)
     }
 
-    public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
+        NSLog("[BackgroundLocation] region monitoring failed for \(region?.identifier ?? "nil"): \(error.localizedDescription)")
+        if region?.identifier == geofenceIdentifier {
+            geofenceCenter = nil
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         NSLog("[BackgroundLocation] authorization changed -> \(describe(status))")
         if status == .authorizedWhenInUse, locationUploadEnabled,
@@ -300,14 +363,10 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         if status == .authorizedAlways || status == .authorizedWhenInUse {
             applyBackgroundUpdatesIfAuthorized()
             if locationUploadEnabled {
-                applySharingLocationConfiguration()
-            }
-            manager.startUpdatingLocation()
-            // If a one-shot caller (e.g. selfie capture) is waiting on this
-            // prompt, kick the manager to deliver a single fresh fix asap
-            // rather than relying on the continuous-updates stream warming
-            // up GPS within their deadline.
-            if !pendingFreshCalls.isEmpty {
+                armPassiveMonitoring()
+                requestFix(reason: "authorizationChanged", force: false)
+            } else if !pendingFreshCalls.isEmpty {
+                // A one-shot caller (e.g. selfie capture) was waiting on this prompt.
                 manager.requestLocation()
             }
         } else if status == .denied || status == .restricted {
@@ -319,24 +378,116 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         logLocationRuntimeState(context: "authorizationChanged")
     }
 
+    // MARK: - Passive monitoring
+
+    private func armPassiveMonitoring() {
+        guard let manager = locationManager, locationUploadEnabled else { return }
+        manager.showsBackgroundLocationIndicator = false
+        if CLLocationManager.significantLocationChangeMonitoringAvailable(),
+           !significantLocationMonitoringActive {
+            manager.startMonitoringSignificantLocationChanges()
+            significantLocationMonitoringActive = true
+            NSLog("[BackgroundLocation] started significant location change monitoring")
+        }
+        if !visitMonitoringActive {
+            manager.startMonitoringVisits()
+            visitMonitoringActive = true
+            NSLog("[BackgroundLocation] started visit monitoring")
+        }
+        if let last = lastPosition {
+            refreshGeofence(around: last)
+        }
+    }
+
+    private func disarmPassiveMonitoring() {
+        guard let manager = locationManager else { return }
+        if significantLocationMonitoringActive {
+            manager.stopMonitoringSignificantLocationChanges()
+            significantLocationMonitoringActive = false
+        }
+        if visitMonitoringActive {
+            manager.stopMonitoringVisits()
+            visitMonitoringActive = false
+        }
+        // Region monitoring persists across launches, so clear by identifier
+        // rather than relying on in-memory state.
+        for region in manager.monitoredRegions where region.identifier == geofenceIdentifier {
+            manager.stopMonitoring(for: region)
+        }
+        geofenceCenter = nil
+        NSLog("[BackgroundLocation] stopped passive location monitoring")
+    }
+
+    private func refreshGeofence(around location: CLLocation) {
+        guard let manager = locationManager,
+              CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        if let center = geofenceCenter,
+           location.distance(from: center) < geofenceRecenterThresholdMeters,
+           location.horizontalAccuracy >= center.horizontalAccuracy {
+            return
+        }
+        let radius = min(max(geofenceRadiusMeters, location.horizontalAccuracy),
+                         manager.maximumRegionMonitoringDistance)
+        let region = CLCircularRegion(center: location.coordinate, radius: radius, identifier: geofenceIdentifier)
+        region.notifyOnEntry = false
+        region.notifyOnExit = true
+        manager.startMonitoring(for: region)
+        geofenceCenter = location
+    }
+
+    /// Ask Core Location for a single fix. Non-forced requests are rate limited.
+    private func requestFix(reason: String, force: Bool) {
+        guard let manager = locationManager else { return }
+        let status = manager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        let now = Date()
+        if !force, let last = lastFixRequestAt, now.timeIntervalSince(last) < minimumFixRequestInterval {
+            return
+        }
+        lastFixRequestAt = now
+        lastWakeAt = now
+        lastWakeReason = reason
+        persistUploadDiagnostics()
+        NSLog("[BackgroundLocation] requesting fix (\(reason))")
+        manager.requestLocation()
+    }
+
+    private func beginWakeWindow(reason: String) {
+        guard wakeBackgroundTask == .invalid else { return }
+        wakeBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "LocationWake") { [weak self] in
+            self?.endWakeWindow()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + wakeWindowSeconds) { [weak self] in
+            self?.endWakeWindow()
+        }
+        NSLog("[BackgroundLocation] wake (\(reason)) appState=\(describe(UIApplication.shared.applicationState))")
+    }
+
+    private func endWakeWindow() {
+        guard wakeBackgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(wakeBackgroundTask)
+        wakeBackgroundTask = .invalid
+    }
+
     // MARK: - Helpers
 
     private func ensureLocationManager() {
         if locationManager == nil {
             let manager = CLLocationManager()
             manager.delegate = self
-            // Sharing your live location with a contact is a foreground-ish
-            // use case. Nearest-ten-meters gives reasonable accuracy without
-            // draining battery the way kCLAccuracyBest would, and a small
-            // distanceFilter means Core Location pushes us updates shortly
-            // after any real movement instead of waiting for a 100m hop.
+            // Applies to `requestLocation()`: Core Location returns as soon as it
+            // reaches this accuracy, so each one-shot powers GPS only briefly.
             manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-            manager.distanceFilter = idleDistanceFilterMeters
-            manager.pausesLocationUpdatesAutomatically = false
+            manager.showsBackgroundLocationIndicator = false
             loadUploadDiagnostics()
             locationManager = manager
             loadSupabaseConfig()
         }
+    }
+
+    private func setLocationUploadEnabled(_ enabled: Bool) {
+        locationUploadEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: sharingActiveDefaultsKey)
     }
 
     private func updateSupabaseConfig(from call: CAPPluginCall) -> Bool {
@@ -377,50 +528,15 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         supabaseConfig = config
     }
 
-    private func scheduleStationaryLocationHeartbeat() {
-        invalidateStationaryLocationHeartbeat()
-        uploadStationaryHeartbeatIfPossible()
-        let timer = Timer(timeInterval: stationaryLocationHeartbeatInterval, repeats: true) { [weak self] _ in
-            self?.uploadStationaryHeartbeatIfPossible()
+    private func postLocationToSupabase(_ location: CLLocation) {
+        guard locationUploadEnabled else {
+            NSLog("[BackgroundLocation] location upload skipped: upload disabled")
+            return
         }
-        timer.tolerance = 5
-        RunLoop.main.add(timer, forMode: .common)
-        stationaryUploadHeartbeatTimer = timer
-    }
-
-    private func invalidateStationaryLocationHeartbeat() {
-        stationaryUploadHeartbeatTimer?.invalidate()
-        stationaryUploadHeartbeatTimer = nil
-    }
-
-    /// Re-upsert the latest coordinates so `updated_at` stays fresh for viewers
-    /// when the device has not moved enough to trigger `didUpdateLocations`.
-    private func uploadStationaryHeartbeatIfPossible() {
-        guard locationUploadEnabled else { return }
-        guard let location = lastPosition else { return }
-        guard location.horizontalAccuracy > minAcceptableHorizontalAccuracy else { return }
-        lastHeartbeatAt = Date()
-        persistUploadDiagnostics()
-        NSLog("[BackgroundLocation] stationary heartbeat upload lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude) fixAge=\(String(format: "%.1f", Date().timeIntervalSince(location.timestamp)))s")
-        locationManager?.requestLocation()
-        postLocationToSupabase(location, bypassThrottle: true)
-    }
-
-    private func postLocationToSupabase(_ location: CLLocation, bypassThrottle: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            guard self.locationUploadEnabled else {
-                NSLog("[BackgroundLocation] location upload skipped: upload disabled")
-                return
-            }
-            guard self.shouldUploadLocation(location, bypassThrottle: bypassThrottle) else {
-                return
-            }
-            self.pendingUploadLocation = location
-            self.uploadRetryWorkItem?.cancel()
-            self.uploadRetryWorkItem = nil
-            self.startNextLocationUploadIfNeeded()
-        }
+        pendingUploadLocation = location
+        uploadRetryWorkItem?.cancel()
+        uploadRetryWorkItem = nil
+        startNextLocationUploadIfNeeded()
     }
 
     private func startNextLocationUploadIfNeeded() {
@@ -449,11 +565,13 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         request.setValue(config.uploadGrant, forHTTPHeaderField: "X-Location-Upload-Grant")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var body: [String: Any] = [
+        // `updated_at` is the fix time, so viewers see how old the position
+        // actually is (e.g. "Updated 20 min ago" for a stationary sharer).
+        let body: [String: Any] = [
             "action": "upload",
             "lat": location.coordinate.latitude,
             "lng": location.coordinate.longitude,
-            "updated_at": isoFormatter.string(from: Date())
+            "updated_at": isoFormatter.string(from: location.timestamp)
         ]
         NSLog("[BackgroundLocation] uploading location user=\(redact(config.userId)) instance=\(redact(config.instanceId))")
         do {
@@ -473,8 +591,7 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
             }
         }
 
-        let session = makeLocationUploadSession()
-        session.dataTask(with: request) { [weak self] data, response, error in
+        uploadSession.dataTask(with: request) { [weak self] data, response, error in
             defer {
                 if backgroundTask != .invalid {
                     UIApplication.shared.endBackgroundTask(backgroundTask)
@@ -511,14 +628,6 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         }.resume()
     }
 
-    private func makeLocationUploadSession() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 30
-        return URLSession(configuration: config)
-    }
-
     private func handleLocationUploadFinished(location: CLLocation, succeeded: Bool) {
         uploadInFlight = false
         if !succeeded {
@@ -532,36 +641,32 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         lastUploadedPosition = location
         lastSuccessfulUploadAt = Date()
         startNextLocationUploadIfNeeded()
+        if pendingUploadLocation == nil {
+            endWakeWindow()
+        }
     }
 
+    /// 403 means every share from this device has expired or been removed;
+    /// 401 means the grant is invalid. Either way, stop all passive monitoring
+    /// until the WebView calls `start()` again with a fresh grant.
     private func handleLocationUploadRejected(location: CLLocation) {
         uploadInFlight = false
         pendingUploadLocation = location
-        locationUploadEnabled = false
-        invalidateStationaryLocationHeartbeat()
-        restoreIdleLocationConfiguration()
+        setLocationUploadEnabled(false)
+        disarmPassiveMonitoring()
+        applyBackgroundUpdatesIfAuthorized()
+        endWakeWindow()
         NSLog("[BackgroundLocation] upload grant rejected; waiting for WebView to provide a fresh grant")
     }
 
-    /// Movement-driven uploads are capped at ~60s unless the user moves ≥10 m.
-    /// Stationary heartbeats pass `bypassThrottle: true`.
-    private func shouldUploadLocation(_ location: CLLocation, bypassThrottle: Bool) -> Bool {
-        if bypassThrottle { return true }
+    private func shouldUploadLocation(_ location: CLLocation) -> Bool {
         guard let lastAt = lastSuccessfulUploadAt else { return true }
-        let elapsed = Date().timeIntervalSince(lastAt)
-        if elapsed >= minimumUploadInterval { return true }
+        if Date().timeIntervalSince(lastAt) >= minimumUploadInterval { return true }
         if let lastUploaded = lastUploadedPosition,
            location.distance(from: lastUploaded) >= movementUploadThresholdMeters {
             return true
         }
         return false
-    }
-
-    private func shouldLogThrottledDidUpdate() -> Bool {
-        let now = Date()
-        if let last = lastDidUpdateLogAt, now.timeIntervalSince(last) < 30 { return false }
-        lastDidUpdateLogAt = now
-        return true
     }
 
     private func scheduleLocationUploadRetry() {
@@ -575,34 +680,6 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + locationUploadRetryDelay, execute: workItem)
     }
 
-    /// While live sharing is active, use settings that reduce iOS 16.4+
-    /// background suspension (blue bar + significant-change wake). Keep a
-    /// 10 m distance filter so GPS jitter does not upload every second.
-    private func applySharingLocationConfiguration() {
-        guard let manager = locationManager, locationUploadEnabled else { return }
-        manager.distanceFilter = idleDistanceFilterMeters
-        if manager.authorizationStatus == .authorizedAlways {
-            manager.showsBackgroundLocationIndicator = true
-        }
-        if CLLocationManager.significantLocationChangeMonitoringAvailable(),
-           !significantLocationMonitoringActive {
-            manager.startMonitoringSignificantLocationChanges()
-            significantLocationMonitoringActive = true
-            NSLog("[BackgroundLocation] started significant location change monitoring")
-        }
-    }
-
-    private func restoreIdleLocationConfiguration() {
-        guard let manager = locationManager else { return }
-        manager.distanceFilter = idleDistanceFilterMeters
-        manager.showsBackgroundLocationIndicator = false
-        if significantLocationMonitoringActive {
-            manager.stopMonitoringSignificantLocationChanges()
-            significantLocationMonitoringActive = false
-            NSLog("[BackgroundLocation] stopped significant location change monitoring")
-        }
-    }
-
     private func recordUploadResult(httpStatus: Int?, errorSnippet: String?) {
         lastUploadAt = Date()
         lastUploadHttpStatus = httpStatus
@@ -614,7 +691,8 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         let lastUploadAt: Date?
         let lastUploadHttpStatus: Int?
         let lastUploadErrorSnippet: String?
-        let lastHeartbeatAt: Date?
+        let lastWakeAt: Date?
+        let lastWakeReason: String?
         let lastDidUpdateAt: Date?
     }
 
@@ -623,7 +701,8 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
             lastUploadAt: lastUploadAt,
             lastUploadHttpStatus: lastUploadHttpStatus,
             lastUploadErrorSnippet: lastUploadErrorSnippet,
-            lastHeartbeatAt: lastHeartbeatAt,
+            lastWakeAt: lastWakeAt,
+            lastWakeReason: lastWakeReason,
             lastDidUpdateAt: lastDidUpdateAt
         )
         if let encoded = try? JSONEncoder().encode(snapshot) {
@@ -638,7 +717,8 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         lastUploadAt = snapshot.lastUploadAt
         lastUploadHttpStatus = snapshot.lastUploadHttpStatus
         lastUploadErrorSnippet = snapshot.lastUploadErrorSnippet
-        lastHeartbeatAt = snapshot.lastHeartbeatAt
+        lastWakeAt = snapshot.lastWakeAt
+        lastWakeReason = snapshot.lastWakeReason
         lastDidUpdateAt = snapshot.lastDidUpdateAt
     }
 
@@ -648,24 +728,16 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 
     /// `allowsBackgroundLocationUpdates` requires Always authorization at the
-    /// time it's set. Setting it earlier is ignored (or on some iOS versions,
-    /// logs a runtime warning), so we defer it until we actually have the
-    /// right permission.
+    /// time it's set, and is only needed so a `requestLocation()` issued during
+    /// a background wake can complete. The indicator stays off: none of the
+    /// passive services we use require it.
     private func applyBackgroundUpdatesIfAuthorized() {
         guard let manager = locationManager else { return }
-        let status = manager.authorizationStatus
-        if status == .authorizedAlways {
-            if !manager.allowsBackgroundLocationUpdates {
-                manager.allowsBackgroundLocationUpdates = true
-            }
-            if locationUploadEnabled {
-                manager.showsBackgroundLocationIndicator = true
-            }
-        } else {
-            if manager.allowsBackgroundLocationUpdates {
-                manager.allowsBackgroundLocationUpdates = false
-            }
+        let wanted = manager.authorizationStatus == .authorizedAlways && locationUploadEnabled
+        if manager.allowsBackgroundLocationUpdates != wanted {
+            manager.allowsBackgroundLocationUpdates = wanted
         }
+        manager.showsBackgroundLocationIndicator = false
     }
 
     private func buildStatusPayload() -> [String: Any] {
@@ -678,33 +750,32 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
             "hasPendingUpload": pendingUploadLocation != nil,
             "uploadInFlight": uploadInFlight,
             "appState": describe(UIApplication.shared.applicationState),
-            "significantLocationMonitoringActive": significantLocationMonitoringActive
+            "significantLocationMonitoringActive": significantLocationMonitoringActive,
+            "visitMonitoringActive": visitMonitoringActive,
+            "geofenceActive": geofenceCenter != nil
         ]
         if let v = isoString(lastUploadAt) { base["lastUploadAt"] = v }
         if let v = lastUploadHttpStatus { base["lastUploadHttpStatus"] = v }
         if let v = lastUploadErrorSnippet { base["lastUploadErrorSnippet"] = v }
-        if let v = isoString(lastHeartbeatAt) { base["lastHeartbeatAt"] = v }
+        if let v = isoString(lastWakeAt) { base["lastWakeAt"] = v }
+        if let v = lastWakeReason { base["lastWakeReason"] = v }
         if let v = isoString(lastDidUpdateAt) { base["lastDidUpdateAt"] = v }
         if let v = supabaseConfig?.uploadGrantExpiresAt { base["uploadGrantExpiresAt"] = v }
         guard let manager = locationManager else {
             base["authorizationStatus"] = "notInitialized"
             base["allowsBackgroundLocationUpdates"] = false
-            base["pausesLocationUpdatesAutomatically"] = false
             base["showsBackgroundLocationIndicator"] = false
-            base["distanceFilter"] = idleDistanceFilterMeters
             return base
         }
         base["authorizationStatus"] = describe(manager.authorizationStatus)
         base["allowsBackgroundLocationUpdates"] = manager.allowsBackgroundLocationUpdates
-        base["pausesLocationUpdatesAutomatically"] = manager.pausesLocationUpdatesAutomatically
         base["showsBackgroundLocationIndicator"] = manager.showsBackgroundLocationIndicator
-        base["distanceFilter"] = manager.distanceFilter
         return base
     }
 
     private func logLocationRuntimeState(context: String) {
         let status = buildStatusPayload()
-        NSLog("[BackgroundLocation] state[\(context)] authorizationStatus=\(status["authorizationStatus"] ?? "") allowsBackgroundLocationUpdates=\(status["allowsBackgroundLocationUpdates"] ?? false) pausesLocationUpdatesAutomatically=\(status["pausesLocationUpdatesAutomatically"] ?? false) hasSupabaseConfig=\(status["hasSupabaseConfig"] ?? false) configUser=\(status["configUser"] ?? "") configInstance=\(status["configInstance"] ?? "") locationUploadEnabled=\(status["locationUploadEnabled"] ?? false) hasPendingUpload=\(status["hasPendingUpload"] ?? false) uploadInFlight=\(status["uploadInFlight"] ?? false) appState=\(status["appState"] ?? "")")
+        NSLog("[BackgroundLocation] state[\(context)] authorizationStatus=\(status["authorizationStatus"] ?? "") allowsBackgroundLocationUpdates=\(status["allowsBackgroundLocationUpdates"] ?? false) significantChanges=\(status["significantLocationMonitoringActive"] ?? false) visits=\(status["visitMonitoringActive"] ?? false) geofence=\(status["geofenceActive"] ?? false) hasSupabaseConfig=\(status["hasSupabaseConfig"] ?? false) configUser=\(status["configUser"] ?? "") configInstance=\(status["configInstance"] ?? "") locationUploadEnabled=\(status["locationUploadEnabled"] ?? false) hasPendingUpload=\(status["hasPendingUpload"] ?? false) uploadInFlight=\(status["uploadInFlight"] ?? false) appState=\(status["appState"] ?? "")")
     }
 
     private func mostRecent(of locations: [CLLocation]) -> CLLocation? {
@@ -785,4 +856,3 @@ public class BackgroundLocationPlugin: CAPPlugin, CLLocationManagerDelegate {
         pendingFreshCalls = remaining
     }
 }
-    

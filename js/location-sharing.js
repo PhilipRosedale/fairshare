@@ -61,6 +61,7 @@ function toggleShareLocation(contactId, enabled) {
 async function shareLocationWithContact(contactId, duration) {
     if (!currentUser) return;
     const expiresAt = duration ? new Date(Date.now() + duration).toISOString() : null;
+    const sourceMetadata = getLocationSharingSourceMetadata();
     try {
         const { error } = await db
             .from('location_shares')
@@ -69,11 +70,20 @@ async function shareLocationWithContact(contactId, duration) {
                 to_user_id: contactId,
                 started_at: new Date().toISOString(),
                 expires_at: expiresAt,
-                ...getLocationSharingSourceMetadata()
+                ...sourceMetadata
             }, { onConflict: 'from_user_id,to_user_id' });
         if (error) throw error;
 
-        locationSharesOutbound[contactId] = { expires_at: expiresAt };
+        try {
+            await claimAllLocationSharesForThisDevice();
+        } catch (claimErr) {
+            console.warn('claim location shares after sharing failed:', claimErr);
+        }
+        locationSharesOutbound[contactId] = {
+            expires_at: expiresAt,
+            source_instance_id: sourceMetadata.source_instance_id,
+            source_platform: sourceMetadata.source_platform
+        };
         updateShareLocationCheckbox(contactId, true, expiresAt);
         checkAndStartLocationSharing();
 
@@ -149,6 +159,22 @@ function hasAnyActiveLocationShares() {
 
 function isLocationShareOwnedByThisDevice(share) {
     return !share?.source_instance_id || share.source_instance_id === getLocationSharingInstanceId();
+}
+
+function describeLocationShareSource(share) {
+    if (isLocationShareOwnedByThisDevice(share)) return 'this device';
+    switch (share?.source_platform) {
+        case 'ios': return 'an iPhone';
+        case 'android': return 'an Android phone';
+        case 'web': return 'a web browser';
+        default: return 'another device';
+    }
+}
+
+function dispatchLocationSharesChanged() {
+    try {
+        window.dispatchEvent(new CustomEvent('union:locationShareChanged', { detail: {} }));
+    } catch (_) { /* best effort */ }
 }
 
 function canReclaimLocationShareOwnership() {
@@ -509,7 +535,7 @@ async function loadLocationShares() {
     try {
         let { data: shares, error } = await db
             .from('location_shares')
-            .select('from_user_id, to_user_id, expires_at, source_instance_id')
+            .select('from_user_id, to_user_id, expires_at, source_instance_id, source_platform')
             .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id);
         if (error && /source_instance_id/i.test(error.message || '')) {
             const fallback = await db
@@ -529,7 +555,8 @@ async function loadLocationShares() {
             if (s.from_user_id === currentUser.id) {
                 locationSharesOutbound[s.to_user_id] = {
                     expires_at: s.expires_at,
-                    source_instance_id: s.source_instance_id || null
+                    source_instance_id: s.source_instance_id || null,
+                    source_platform: s.source_platform || null
                 };
             } else {
                 locationSharesInbound[s.from_user_id] = { expires_at: s.expires_at };
@@ -576,6 +603,35 @@ async function claimUnownedLocationSharesForThisDevice() {
     }
 }
 
+// A user has a single `user_locations` row, so one device uploads for all of
+// their shares. Turning sharing on (or "Share from this device") moves every
+// active outbound share here; the previous device sees the change and stops.
+async function claimAllLocationSharesForThisDevice() {
+    if (!currentUser) return;
+    const meta = getLocationSharingSourceMetadata();
+    if (!meta.source_instance_id) return;
+    const { error } = await db
+        .from('location_shares')
+        .update(meta)
+        .eq('from_user_id', currentUser.id)
+        .or('expires_at.is.null,expires_at.gt.' + new Date().toISOString());
+    if (error) throw error;
+    await loadLocationShares();
+}
+
+async function shareLocationFromThisDevice() {
+    if (!currentUser) return;
+    try {
+        await claimAllLocationSharesForThisDevice();
+    } catch (e) {
+        console.error('shareLocationFromThisDevice error:', e);
+        showToast('Could not move location sharing to this device.', 'error');
+        return;
+    }
+    checkAndStartLocationSharing();
+    dispatchLocationSharesChanged();
+}
+
 function subscribeToLocationShares() {
     if (locationSharesChannel) {
         db.removeChannel(locationSharesChannel);
@@ -611,6 +667,8 @@ function unsubscribeFromLocationShares() {
 
 async function handleLocationSharesChanged() {
     await loadLocationShares();
+    checkAndStartLocationSharing();
+    dispatchLocationSharesChanged();
     await loadContactLocations();
     refreshContactLocationsSubscriptions();
     if (activeMainView === 'contacts') {

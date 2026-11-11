@@ -281,6 +281,7 @@ function renderContactDetailsScreen(root, row) {
                 </div>
                 <div class="cd-switch ${shareLoc ? 'cd-switch-on' : ''}"><div class="cd-switch-knob"></div></div>
             </button>
+            <div class="cd-share-source" id="cd-share-source" hidden></div>
             <div class="cd-toggle-divider"></div>
             <button type="button" class="cd-toggle-row" id="cd-toggle-share-email"
                 onclick="cdOnToggleShareEmail('${esc(id)}')"
@@ -353,6 +354,7 @@ function cdOnBlockContact(contactId, name) {
 async function hydrateContactDetailsScreen(contactId) {
     if (!contactId) return;
 
+    cdRenderShareSource(contactId);
     // Sharing-location pane (only rendered if they share with us).
     cdRenderSharingLocationPane(contactId);
 
@@ -942,6 +944,7 @@ function cdSetSwitch(rowId, on) {
 window.addEventListener('union:locationShareChanged', () => {
     if (!cdCurrentContactId) return;
     cdSetSwitch('cd-toggle-share', !!locationSharesOutbound[cdCurrentContactId]);
+    cdRenderShareSource(cdCurrentContactId);
     // Inbound shares may also have changed → refresh the sharing-location pane.
     cdRenderSharingLocationPane(cdCurrentContactId);
 });
@@ -951,6 +954,27 @@ window.addEventListener('union:contactLocationsLoaded', () => {
     if (!cdCurrentContactId) return;
     cdRenderSharingLocationPane(cdCurrentContactId);
 });
+
+// Which device uploads our location for this share. Only one device can, so
+// a share started elsewhere (e.g. an old phone install) offers a takeover.
+function cdRenderShareSource(contactId) {
+    const el = document.getElementById('cd-share-source');
+    if (!el) return;
+    const share = locationSharesOutbound[contactId];
+    if (!share) {
+        el.hidden = true;
+        el.innerHTML = '';
+        return;
+    }
+    el.hidden = false;
+    if (isLocationShareOwnedByThisDevice(share)) {
+        el.innerHTML = '<span class="cd-share-source-text">Sharing from this device</span>';
+        return;
+    }
+    el.innerHTML = `
+        <span class="cd-share-source-text">Sharing from ${esc(describeLocationShareSource(share))}</span>
+        <button type="button" class="cd-share-source-btn" onclick="shareLocationFromThisDevice()">Share from this device</button>`;
+}
 
 // ----- Sharing-location pane (only when they share with us) ------------------
 

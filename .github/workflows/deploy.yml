@@ -36,6 +36,11 @@ jobs:
           sed -i "s|__BUILD_VERSION__|${VERSION}|g" index.html
           sed -i "s|__BUILD_HASH__|${SHORT_SHA}|g" sw.js
 
+          # Cache-bust our own JS and CSS so browsers fetch fresh copies right after
+          # each deploy, instead of reusing saved ones for up to 10 minutes.
+          sed -i -E "s#(src=\"js/[^\"?]+\.js)\"#\1?v=${SHORT_SHA}\"#g" index.html
+          sed -i -E "s#href=\"styles\.css(\?v=[^\"]*)?\"#href=\"styles.css?v=${SHORT_SHA}\"#g" index.html
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 

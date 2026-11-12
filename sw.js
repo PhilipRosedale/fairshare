@@ -132,9 +132,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Page loads always check the server for a fresh index.html (cheap when unchanged)
+  // instead of reusing a copy the browser saved up to 10 minutes ago. That way a new
+  // deploy shows up on the next reload. A redirect is passed back as a redirect.
+  const isPageLoad = event.request.mode === 'navigate' && event.request.method === 'GET';
+  const networkRequest = isPageLoad
+    ? fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
+        .then(response => response.redirected ? Response.redirect(response.url, 302) : response)
+    : fetch(event.request);
+
   // Network-first for everything else (HTML, CDN scripts, etc.)
   event.respondWith(
-    fetch(event.request)
+    networkRequest
       .then(response => {
         // Cache a copy of successful responses
         if (response.ok || response.type === 'opaque') {
@@ -144,7 +153,8 @@ self.addEventListener('fetch', event => {
         return response;
       })
       .catch(() =>
-        caches.match(event.request).then(cached => {
+        // ignoreSearch so offline still finds files cached before the ?v= stamp changed
+        caches.match(event.request, { ignoreSearch: true }).then(cached => {
           if (cached) return cached;
           // For navigation requests, fall back to the cached app shell
           if (event.request.mode === 'navigate') {

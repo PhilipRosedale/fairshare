@@ -36,6 +36,11 @@ const LOCATION_DURATIONS = Object.freeze({
 
 const BETA_IOS_TESTFLIGHT_URL = 'https://testflight.apple.com/join/naW7xwrX';
 const APP_STORE_URL = 'https://apps.apple.com/us/app/union42/id6762217370';
+// iPhone visitors to a sponsor link get an app-first page (App Store button,
+// web signup as a fallback). Keep false until an App Store build that has the
+// "Paste invite link" button is live, or new users would land in an app that
+// can't receive their invite.
+const APP_FIRST_SPONSOR_PAGE = false;
 
 const APP_MAP = Object.freeze({
     TILE_URL: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_4c3c_1_cc4e7e047c9f0603e396c06d',

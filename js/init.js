@@ -430,6 +430,7 @@ async function showMeetBanner(token) {
         }
 
         switchAuthTab('signup');
+        if (typeof maybeShowAppFirstSponsorPage === 'function') maybeShowAppFirstSponsorPage(token);
     } catch (e) {
         console.error('Failed to load meet details:', e);
     }

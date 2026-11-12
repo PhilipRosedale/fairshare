@@ -125,6 +125,18 @@
             <button type="button" class="btn btn-primary auth-signup-gate-btn" onclick="openAuthScanOverlay()">
                 <span class="auth-scan-btn-icon" aria-hidden="true"><i data-lucide="qr-code" aria-hidden="true"></i></span> Scan QR
             </button>
+            <button type="button" class="btn btn-outline auth-paste-invite-btn" onclick="pasteInviteLink()">Paste invite link</button>
+            <div id="authPasteInviteField" class="form-group auth-paste-invite-field hidden">
+                <input type="url" id="authPasteInviteInput" placeholder="https://union42.net/?meet=…" autocomplete="off" oninput="handlePastedInviteInput()">
+                <p id="authPasteInviteHint" class="auth-paste-invite-hint">Press and hold in the box, then tap Paste.</p>
+            </div>
+        </div>
+        <!-- App-first sponsor page (iPhone web only, behind APP_FIRST_SPONSOR_PAGE in constants.js). -->
+        <div id="authAppFirst" class="auth-app-first hidden">
+            <p class="auth-app-first-title">Get the app to join</p>
+            <a id="authAppFirstStore" class="auth-app-store-btn" target="_blank" rel="noopener"><img src="assets/app-store-badge.svg" alt="Download on the App Store" width="132" height="44"></a>
+            <p class="auth-get-app-text">Tapping the button copies your invite. After installing, open Union and tap Paste invite link.</p>
+            <a href="#" class="auth-app-first-web" onclick="showWebSignupInstead(); return false;">Or sign up on the web</a>
         </div>
         <div id="signupFields">
             <div class="form-group">

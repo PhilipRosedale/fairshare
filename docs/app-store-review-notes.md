@@ -14,7 +14,7 @@ Sign-up in Union normally requires a sponsor's QR code (the app uses an invite-o
 This account is already a member of two demo groups so the reviewer can immediately exercise contacts, chat, group currencies, and location features.
 
 > If you'd prefer the reviewer goes through the real sign-up flow instead, paste this one-time invite URL into Safari on the test device, then tap **Open in Union** when prompted:
-> `https://app.fairshare.social/?invite=[fill in token]`
+> `https://union42.net/?invite=[fill in token]`
 
 ---
 
@@ -53,7 +53,7 @@ Union has user-generated content (chat messages, profile photos, contact selfies
 
 1. **Report objectionable content.** Every chat message from another user has a `⋮` button that opens a Report dialog. The contact details screen has an explicit "Report" button. Reports go into a `reports` table; we review them within 24 hours.
 2. **Block users.** The contact details screen has a "Block" button. Blocking removes the user from the reporter's contacts, chat, nearby alerts, and map. A "Manage blocked users" screen in Profile lets users unblock later.
-3. **Zero-tolerance policy.** The Terms of Use (linked in-app from Profile and at https://app.fairshare.social/terms.html) explicitly forbid objectionable content and abusive behavior, and state that violators are removed.
+3. **Zero-tolerance policy.** The Terms of Use (linked in-app from Profile and at https://union42.net/terms.html) explicitly forbid objectionable content and abusive behavior, and state that violators are removed.
 4. **Server-side enforcement.** Reports and blocks are enforced via Postgres RPCs (`report_content`, `block_user`, `unblock_user`) with row-level security — clients can only block / report as themselves.
 
 ---
@@ -87,7 +87,7 @@ To exercise the background-location code path:
 2. Open any contact → toggle **"Share My Location"** → choose any duration.
 3. Grant **Allow Always** (the system will prompt; you can also raise it later in Settings → Privacy → Location → Union → Always).
 4. Lock the device and walk a short distance, or use Xcode's **Simulate Location** to move a few hundred meters.
-5. Re-open the app on the second test device (or the web at https://app.fairshare.social) signed in as the contact you shared with — the pin updates each time the sharer moves roughly 150 m, arrives at or leaves a place, or opens Union.
+5. Re-open the app on the second test device (or the web at https://union42.net) signed in as the contact you shared with — the pin updates each time the sharer moves roughly 150 m, arrives at or leaves a place, or opens Union.
 
 When the user toggles **Share My Location** off, or the chosen duration expires, the app stops significant-change, visit, and geofence monitoring and sets `allowsBackgroundLocationUpdates = false`.
 
@@ -106,7 +106,7 @@ Union uses **email + password authentication only** (via Supabase Auth). It does
 - We do **not** track users across other apps or websites.
 - All transit is HTTPS / TLS via standard `URLSession` and the WebView; we do not implement custom cryptography (`ITSAppUsesNonExemptEncryption = false`).
 
-The app's privacy policy is linked from inside the app (Profile → Privacy Policy) and at https://app.fairshare.social/privacy.html.
+The app's privacy policy is linked from inside the app (Profile → Privacy Policy) and at https://union42.net/privacy.html.
 
 A Privacy Manifest (`PrivacyInfo.xcprivacy`) is included in the bundle. It declares:
 

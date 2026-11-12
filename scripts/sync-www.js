@@ -17,6 +17,7 @@ const EXCLUDE = new Set([
     '.github',
     '.cursor',
     'docs',
+    'deploy',
     'sql',
     'supabase',
     'scripts',

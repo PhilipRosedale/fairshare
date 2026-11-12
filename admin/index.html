@@ -586,7 +586,7 @@ async function loadDemoAccountsStatus() {
             'Demo logins: <code>' + esc(data.auth_email_pattern || 'demo+*@fairshare.social') + '</code>' +
             ' · password: <code>' + esc(data.demo_password || '') + '</code><br>' +
             'Portraits: click <strong>Apply demo portraits</strong> (serves from <code>/assets/demo-portraits/</code>). ' +
-            'Deploy the site so <code>app.fairshare.social</code> hosts those JPEGs, or use <code>npm run seed:demo</code> to upload to Supabase Storage instead.';
+            'Deploy the site so <code>union42.net</code> hosts those JPEGs, or use <code>npm run seed:demo</code> to upload to Supabase Storage instead.';
     }
 }
 
@@ -647,7 +647,7 @@ async function applyDemoPortraits(silent) {
 
     // Production app loads avatars from the public site, not localhost.
     const isLocal = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
-    const origin = isLocal ? window.location.origin : 'https://app.fairshare.social';
+    const origin = isLocal ? window.location.origin : 'https://union42.net';
     const { data, error } = await db.rpc('admin_apply_demo_portraits', { p_origin: origin });
 
     if (btn) btn.disabled = false;

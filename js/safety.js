@@ -107,6 +107,7 @@ async function openBlockedUsersModal() {
     const body = document.getElementById('modalBody');
     if (!overlay || !body) return;
     body.innerHTML = `
+        ${modalCloseX()}
         <h3>Blocked users</h3>
         <p style="font-size:0.88rem;color:var(--dark-gray);margin-bottom:0.75rem;">
             People you've blocked won't appear in your contacts, chat, nearby
@@ -114,9 +115,6 @@ async function openBlockedUsersModal() {
         </p>
         <div id="blockedUsersList" class="blocked-users-list">
             <p style="color:var(--dark-gray);text-align:center;padding:1rem 0;">Loading…</p>
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
         </div>
     `;
     overlay.classList.remove('hidden');

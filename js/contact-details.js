@@ -670,12 +670,10 @@ function cdOpenMutualsDialog(contactId, name) {
     }
 
     body.innerHTML = `
+        ${modalCloseX()}
         <h3>You and ${esc(name || 'this contact')}</h3>
         <div class="cd-mutuals-dialog">
             ${sections.join('') || '<div class="cd-mutuals-empty">No mutuals yet.</div>'}
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
         </div>
     `;
     overlay.classList.remove('hidden');
@@ -754,9 +752,6 @@ function cdOpenTrustInfoDialog() {
                 vouch types notify you directly, and other types appear only
                 as aggregate counts.
             </p>
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
         </div>
     `;
     overlay.classList.remove('hidden');

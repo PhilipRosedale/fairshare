@@ -1551,12 +1551,10 @@ async function openFamilyTree(userId, name) {
 
     familyTreeOpenFor = userId;
     body.innerHTML = `
+        ${modalCloseX()}
         <h3>Family Tree</h3>
         <div class="family-tree" id="familyTreeBody">
             <div class="family-tree-loading">Loading…</div>
-        </div>
-        <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
         </div>
     `;
     overlay.classList.remove('hidden');

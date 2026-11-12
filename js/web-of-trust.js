@@ -36,13 +36,11 @@ async function renderVouchChoiceModal() {
         return `<div class="choice-item"><button type="button" class="btn choice-button ${btnClass}" onclick="vouchWithContactChoice('${esc(t.id)}')">${esc(t.description)} ${esc(tag)}</button></div>`;
     }).join('');
     body.innerHTML = `
+        ${modalCloseX()}
         <h3>Vouch for ${esc(vouchWithContactName || 'contact')}</h3>
         <p style="font-size:0.9rem;color:var(--dark-gray);margin-bottom:1rem;">Vouches decay over time and can be made as often as desired.</p>
         <div class="choice-list">
             ${buttons}
-            <div class="form-actions">
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-            </div>
         </div>
     `;
 }

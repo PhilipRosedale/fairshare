@@ -196,6 +196,7 @@ function showModal(type) {
 
         case 'shareLocationDuration':
             body.innerHTML = `
+                ${modalCloseX('cancelShareLocationDialog()')}
                 <h3>Share your location with ${esc(shareLocationContactName || 'contact')}</h3>
                 <p style="font-size:0.9rem;color:var(--dark-gray);margin-bottom:1rem;">How long do you want to share?</p>
                 <div class="choice-list">
@@ -203,9 +204,6 @@ function showModal(type) {
                     <div class="choice-item"><button type="button" class="btn btn-outline choice-button" onclick="shareLocationDurationChoice(${LOCATION_DURATIONS.DAY_MS})">For a Day</button></div>
                     <div class="choice-item"><button type="button" class="btn btn-outline choice-button" onclick="shareLocationDurationChoice(${LOCATION_DURATIONS.WEEK_MS})">For a Week</button></div>
                     <div class="choice-item"><button type="button" class="btn btn-outline choice-button" onclick="shareLocationDurationChoice(null)">Indefinitely</button></div>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="cancelShareLocationDialog()">Cancel</button>
-                    </div>
                 </div>
             `;
             break;
@@ -294,6 +292,13 @@ function showModal(type) {
         }
     }
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+// Corner "X" for dialogs whose only bottom button was a dismiss (Vouch, Family
+// Tree, Blocked users, ...). Inline SVG so it renders without a Lucide refresh.
+// Sticky, so it stays reachable when a long dialog scrolls.
+function modalCloseX(onclick = 'closeModal()') {
+    return `<div class="modal-x-wrap"><button type="button" class="modal-x" onclick="${onclick}" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
 }
 
 function closeModal(_options = {}) {

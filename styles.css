@@ -578,13 +578,12 @@ body {
     margin: 0 0 0.75rem;
 }
 .auth-app-store-btn {
-    background: #000;
-    color: #fff;
-    text-decoration: none;
+    display: inline-block;
 }
-.auth-app-store-btn:hover {
-    background: #222;
-    color: #fff;
+.auth-app-store-btn img {
+    display: block;
+    height: 44px;
+    width: auto;
 }
 
 .invite-sponsor-row {

@@ -102,15 +102,6 @@ function renderProfileScreen() {
                 </div>
                 <hr class="pref-divider">
                 <h4 class="pref-section-title">Preferences</h4>
-                ${!IS_NATIVE ? `
-                <div class="pref-beta-ios-card">
-                    <div>
-                        <div class="pref-beta-ios-title">Beta iOS app</div>
-                        <p class="pref-help-text">Install the native beta through TestFlight.</p>
-                    </div>
-                    <button type="button" class="btn btn-primary pref-beta-ios-btn" onclick="openBetaIosTestFlight()">Try the beta iOS app</button>
-                </div>
-                ` : ''}
                 ${canUsePush() ? `
                 <div class="form-group pref-checkbox-row">
                     <input type="checkbox" id="prefPushNotifications" style="flex-shrink:0;">

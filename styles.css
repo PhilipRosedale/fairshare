@@ -1084,29 +1084,6 @@ body {
     color: var(--accent-color);
     margin-bottom: 0.6rem;
 }
-.pref-beta-ios-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    background: linear-gradient(135deg, #e3f0f8, #f6fbfe);
-    border: 1px solid rgba(58, 124, 165, 0.18);
-    border-radius: 10px;
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-}
-.pref-beta-ios-title {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--accent-color);
-}
-.pref-beta-ios-card .pref-help-text {
-    margin-bottom: 0;
-}
-.pref-beta-ios-btn {
-    flex-shrink: 0;
-    white-space: nowrap;
-}
 .beta-ios-modal {
     text-align: center;
 }
@@ -1121,15 +1098,6 @@ body {
 .beta-ios-actions {
     justify-content: center;
     flex-wrap: wrap;
-}
-@media (max-width: 430px) {
-    .pref-beta-ios-card {
-        align-items: stretch;
-        flex-direction: column;
-    }
-    .pref-beta-ios-btn {
-        width: 100%;
-    }
 }
 .pref-checkbox-row {
     display: flex;

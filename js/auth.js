@@ -77,7 +77,7 @@ function switchAuthTab(tab) {
     if (tab === 'signup') {
         const hasToken = hasInviteOrMeetToken();
         document.getElementById('signupGate').classList.toggle('hidden', hasToken);
-        document.getElementById('signupFields').classList.toggle('hidden', !hasToken);
+        document.getElementById('signupFields').classList.toggle('hidden', !hasToken || appFirstSponsorActive);
     }
     if (tab === 'forgot') {
         const loginEmail = document.getElementById('loginEmail')?.value?.trim();
@@ -253,14 +253,7 @@ function authScanLoop() {
         : null;
 
     if (code && code.data) {
-        let scannedToken = null;
-        try {
-            const scannedUrl = new URL(code.data);
-            scannedToken = scannedUrl.searchParams.get('meet');
-        } catch {}
-        if (!scannedToken && code.data.startsWith('fairshare-meet:')) {
-            scannedToken = code.data.replace('fairshare-meet:', '');
-        }
+        const scannedToken = extractMeetToken(code.data);
         if (scannedToken && !authScanHandled) {
             authScanHandled = true;
             handleAuthQrScan(scannedToken);
@@ -287,6 +280,121 @@ async function handleAuthQrScan(token) {
     if (typeof showMeetBanner === 'function') {
         await showMeetBanner(token);
     }
+}
+
+// Pull a sponsor (meet) token out of a scanned QR or a pasted link.
+// Accepts a full link (https://union42.net/?meet=TOKEN, old domains too),
+// the legacy "fairshare-meet:TOKEN" QR format, or text with a link inside it.
+function extractMeetToken(text) {
+    if (!text) return null;
+    const raw = String(text).trim();
+    if (raw.startsWith('fairshare-meet:')) return raw.slice('fairshare-meet:'.length).trim() || null;
+    const candidates = [raw, ...(raw.match(/https?:\/\/\S+/g) || [])];
+    for (const c of candidates) {
+        try {
+            const token = new URL(c).searchParams.get('meet');
+            if (token) return token;
+        } catch {}
+    }
+    return null;
+}
+
+// "Paste invite link" on the Sign Up gate. Lets someone who got a sponsor link
+// by text/email (or copied it on the sponsor page before installing the app)
+// bring it in without scanning a QR. Shows a paste box right away, and at the
+// same time tries to read the clipboard. Some browsers ask permission first,
+// so the box keeps working even if that request is ignored or denied.
+async function pasteInviteLink() {
+    const field = document.getElementById('authPasteInviteField');
+    const input = document.getElementById('authPasteInviteInput');
+    const hint = document.getElementById('authPasteInviteHint');
+    if (field) field.classList.remove('hidden');
+    if (hint) hint.textContent = 'Press and hold in the box, then tap Paste.';
+
+    let text = '';
+    try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+            text = await navigator.clipboard.readText();
+        }
+    } catch (_) { /* permission denied or unsupported; the box still works */ }
+
+    const token = extractMeetToken(text);
+    if (token) {
+        await useInviteToken(token);
+        return;
+    }
+    if (text && hint) {
+        hint.textContent = "What you copied isn't an invite link. Paste the link your sponsor sent you.";
+    }
+    if (input) input.focus();
+}
+
+function handlePastedInviteInput() {
+    const input = document.getElementById('authPasteInviteInput');
+    const token = extractMeetToken(input && input.value);
+    if (token) useInviteToken(token);
+}
+
+async function useInviteToken(token) {
+    try {
+        localStorage.setItem('fairshare_meet', JSON.stringify({
+            token: token,
+            savedAt: Date.now(),
+            meetSource: 'URL',
+        }));
+    } catch (e) {
+        console.warn('[auth-paste] Could not persist meet token:', e);
+    }
+    document.getElementById('authPasteInviteField')?.classList.add('hidden');
+    const input = document.getElementById('authPasteInviteInput');
+    if (input) input.value = '';
+    if (typeof showMeetBanner === 'function') {
+        await showMeetBanner(token);
+    }
+}
+
+// --- App-first sponsor page (iPhone web only, behind APP_FIRST_SPONSOR_PAGE) ---
+let appFirstSponsorActive = false;
+
+function isIphoneWeb() {
+    if (oauthPlatform() !== 'web') return false;
+    const ua = navigator.userAgent || '';
+    const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    return /iPhone|iPod|iPad/.test(ua) || iPadOS;
+}
+
+// Called by showMeetBanner after a sponsor link checks out.
+function maybeShowAppFirstSponsorPage(token) {
+    if (typeof APP_FIRST_SPONSOR_PAGE === 'undefined' || !APP_FIRST_SPONSOR_PAGE) return;
+    if (!isIphoneWeb()) return;
+    const block = document.getElementById('authAppFirst');
+    const storeBtn = document.getElementById('authAppFirstStore');
+    if (!block || !storeBtn) return;
+
+    const inviteUrl = publicAppUrl(`?meet=${encodeURIComponent(token)}`);
+    storeBtn.href = APP_STORE_URL;
+    storeBtn.onclick = (e) => {
+        // Copy the invite during the tap, then go to the App Store. The app's
+        // "Paste invite link" button picks it up after install.
+        e.preventDefault();
+        let done = false;
+        const go = () => { if (!done) { done = true; window.location.href = APP_STORE_URL; } };
+        try {
+            navigator.clipboard.writeText(inviteUrl).then(go, go);
+        } catch (_) { go(); }
+        setTimeout(go, 800);
+    };
+
+    appFirstSponsorActive = true;
+    block.classList.remove('hidden');
+    document.getElementById('signupFields')?.classList.add('hidden');
+    document.getElementById('authGetApp')?.classList.add('hidden');
+}
+
+function showWebSignupInstead() {
+    appFirstSponsorActive = false;
+    document.getElementById('authAppFirst')?.classList.add('hidden');
+    document.getElementById('signupFields')?.classList.remove('hidden');
 }
 
 function closeAuthScanOverlay() {

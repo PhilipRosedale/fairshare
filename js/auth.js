@@ -15,6 +15,15 @@ function oauthPlatform() {
     if (!(cap && cap.isNativePlatform && cap.isNativePlatform())) return 'web';
     return (cap.getPlatform && cap.getPlatform()) || 'native';
 }
+// "Download on the App Store" on the Sign Up tab: web only, never inside the native apps.
+document.addEventListener('DOMContentLoaded', () => {
+    if (oauthPlatform() !== 'web') return;
+    const getApp = document.getElementById('authGetApp');
+    if (!getApp) return;
+    getApp.querySelector('.auth-app-store-btn').href = APP_STORE_URL;
+    getApp.classList.remove('hidden');
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     if (!OAUTH_ENABLED) return;
     const platform = oauthPlatform();

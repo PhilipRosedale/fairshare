@@ -566,6 +566,25 @@ body {
     text-decoration: none;
 }
 .auth-agree-label a:hover { text-decoration: underline; }
+.auth-get-app {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--medium-gray);
+    text-align: center;
+}
+.auth-get-app-text {
+    font-size: 0.82rem;
+    color: var(--dark-gray);
+    margin: 0 0 0.75rem;
+}
+.auth-app-store-btn {
+    display: inline-block;
+}
+.auth-app-store-btn img {
+    display: block;
+    height: 44px;
+    width: auto;
+}
 
 .invite-sponsor-row {
     display: flex;

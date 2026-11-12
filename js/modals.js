@@ -378,8 +378,11 @@ function isRecentSignupForBetaIosPrompt() {
 }
 
 function shouldOfferBetaIosPromptAfterSignup() {
-    if (IS_NATIVE || !currentUser || hasShownBetaIosPrompt()) return false;
-    return hasPendingBetaIosWebSignup() || isRecentSignupForBetaIosPrompt();
+    // Turned off: the iOS app is on the App Store now, so we no longer push web users to TestFlight.
+    // To bring the prompt back, restore the two lines below.
+    // if (IS_NATIVE || !currentUser || hasShownBetaIosPrompt()) return false;
+    // return hasPendingBetaIosWebSignup() || isRecentSignupForBetaIosPrompt();
+    return false;
 }
 
 function maybeShowBetaIosPromptAfterSignup() {

@@ -144,6 +144,7 @@ async function init() {
             if (claimedGroup || claimedGroupFromMeet) {
                 await loadProfile();
             }
+            if (await rejectUnsponsoredNewAccount()) return;
             showApp(claimedGroup || claimedGroupFromMeet);
         } else {
             showAuth();
@@ -174,6 +175,7 @@ async function init() {
                         if (claimedGroup || claimedGroupFromMeet) {
                             await loadProfile();
                         }
+                        if (await rejectUnsponsoredNewAccount()) return;
                         showApp(claimedGroup || claimedGroupFromMeet);
                     } catch (e) {
                         console.error('[auth] post-SIGNED_IN error:', e);
@@ -258,6 +260,49 @@ async function showInviteBanner(token) {
     } catch (e) {
         console.error('Failed to load invite details:', e);
     }
+}
+
+// Union is invite-only. Apple/Google sign-in can create a brand-new auth
+// user with no sponsor (e.g. someone taps "Continue with Google" on the
+// Log In tab without ever scanning a QR code). If that happens, remove the
+// half-made account and send them back to the auth screen.
+//
+// Only applies to accounts created in the last few minutes, so existing
+// root users (no sponsor) are never touched. If a sponsor token is still
+// pending (a claim failed for a transient reason and will retry), we leave
+// the account alone.
+const UNSPONSORED_NEW_ACCOUNT_WINDOW_MS = 10 * 60 * 1000;
+let _rejectingUnsponsored = false;
+
+function hasPendingSponsorToken() {
+    try {
+        if (localStorage.getItem('fairshare_meet')) return true;
+        if (localStorage.getItem('fairshare_invite')) return true;
+    } catch (_) {}
+    const meta = currentUser?.user_metadata || {};
+    return Boolean(meta.meet_token || meta.invite_token);
+}
+
+async function rejectUnsponsoredNewAccount() {
+    if (!currentUser || !currentProfile) return false;
+    if (currentProfile.sponsor_id) return false;
+    const createdMs = Date.parse(currentUser.created_at || '');
+    if (!createdMs || (Date.now() - createdMs) > UNSPONSORED_NEW_ACCOUNT_WINDOW_MS) return false;
+    if (hasPendingSponsorToken()) return false;
+    if (_rejectingUnsponsored) return true;
+    _rejectingUnsponsored = true;
+    try {
+        const { error } = await db.rpc('delete_my_account');
+        if (error) console.error('[auth] could not remove unsponsored account:', error);
+    } catch (e) {
+        console.error('[auth] could not remove unsponsored account:', e);
+    }
+    try { localStorage.removeItem('fairshare_has_account'); } catch (_) {}
+    await logout();
+    switchAuthTab('signup');
+    showToast("Union is invite-only. Scan a member's QR code to join. Already a member? Log in the way you signed up.", 'error');
+    _rejectingUnsponsored = false;
+    return true;
 }
 
 // In-memory mutex so the getSession() and onAuthStateChange(SIGNED_IN) paths

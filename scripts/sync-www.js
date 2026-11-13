@@ -15,6 +15,7 @@ const EXCLUDE = new Set([
     'www',
     '.git',
     '.github',
+    '.well-known',
     '.cursor',
     'docs',
     'deploy',

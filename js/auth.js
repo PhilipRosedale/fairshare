@@ -968,3 +968,60 @@ async function handleNativeAppleLogin() {
     wrap('handleLogin', 'Signing in...');
     wrap('handleSignup', 'Creating account...');
 })();
+
+// --- Union links opening the app (iOS Universal Links / Android App Links) ---
+// When someone taps a sponsor or invite link (or scans one with the phone
+// camera) and the app is installed, the phone opens the app instead of Safari
+// or Chrome. This picks up that link and does the same thing the website would:
+// logged out, show the sponsor/invite card and the signup form; logged in, a
+// note that the link is for new people.
+const handledAppLinks = new Set();
+
+async function handleIncomingAppLink(rawUrl) {
+    if (!rawUrl || handledAppLinks.has(rawUrl)) return;
+    let url;
+    try { url = new URL(rawUrl); } catch (_) { return; }
+    const host = url.hostname.replace(/^www\./, '');
+    if (host !== 'union42.net' && host !== 'app.fairshare.social') return;
+
+    const meetToken = url.searchParams.get('meet');
+    const inviteToken = url.searchParams.get('invite');
+    if (!meetToken && !inviteToken) return;
+    handledAppLinks.add(rawUrl);
+
+    let session = null;
+    try { session = (await db.auth.getSession()).data?.session || null; } catch (_) {}
+    if (session) {
+        showToast('Share this link with someone who is not yet on Union.', 'info');
+        return;
+    }
+
+    if (meetToken) {
+        await useInviteToken(meetToken);
+        return;
+    }
+    try {
+        localStorage.setItem('fairshare_invite', JSON.stringify({ token: inviteToken, savedAt: Date.now() }));
+    } catch (_) {}
+    if (typeof showInviteBanner === 'function') await showInviteBanner(inviteToken);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    if (oauthPlatform() === 'web') return;
+    const AppPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (!AppPlugin) {
+        console.warn('[app-links] @capacitor/app not available; links will not open in the app');
+        return;
+    }
+    // Link tapped while the app is already running (or in the background).
+    try {
+        AppPlugin.addListener('appUrlOpen', (event) => handleIncomingAppLink(event && event.url));
+    } catch (e) {
+        console.warn('[app-links] Could not listen for opened links:', e);
+    }
+    // Link that launched the app from closed.
+    try {
+        const launch = await AppPlugin.getLaunchUrl();
+        if (launch && launch.url) await handleIncomingAppLink(launch.url);
+    } catch (_) {}
+});

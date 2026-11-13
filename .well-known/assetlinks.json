@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "social.fairshare.union",
+      "sha256_cert_fingerprints": [
+        "FA:2B:35:F0:7B:1F:0D:2A:9A:37:6F:8C:EA:61:62:98:F1:62:37:9C:2B:00:67:E1:83:AA:7C:F9:5B:82:8E:A3"
+      ]
+    }
+  }
+]

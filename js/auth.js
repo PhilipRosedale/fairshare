@@ -391,12 +391,6 @@ function maybeShowAppFirstSponsorPage(token) {
     document.getElementById('authGetApp')?.classList.add('hidden');
 }
 
-function showWebSignupInstead() {
-    appFirstSponsorActive = false;
-    document.getElementById('authAppFirst')?.classList.add('hidden');
-    document.getElementById('signupFields')?.classList.remove('hidden');
-}
-
 function closeAuthScanOverlay() {
     if (authScanStream) {
         authScanStream.getTracks().forEach(t => t.stop());

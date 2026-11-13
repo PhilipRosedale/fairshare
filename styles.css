@@ -610,10 +610,6 @@ body {
 .auth-app-first .auth-get-app-text {
     margin: 0;
 }
-.auth-app-first-web {
-    font-size: 0.85rem;
-    color: var(--primary-color);
-}
 .auth-app-store-btn img {
     display: block;
     height: 44px;

@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["Q4H43839LK.social.fairshare.union"],
+        "components": [
+          { "/": "/", "?": { "meet": "?*" }, "comment": "Sponsor / meet links open the app" },
+          { "/": "/", "?": { "invite": "?*" }, "comment": "Group invite links open the app" }
+        ]
+      }
+    ]
+  }
+}

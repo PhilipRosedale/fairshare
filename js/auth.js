@@ -363,10 +363,26 @@ function isIphoneWeb() {
     return /iPhone|iPod|iPad/.test(ua) || iPadOS;
 }
 
+// Preview switch: add &preview=appfirst to a sponsor link to see the app-first
+// page on any browser (phone or computer) while it's still switched off for
+// everyone else. Read right away, because the page clears the address bar
+// params during startup. Remembered for the rest of that browser tab.
+const APP_FIRST_PREVIEW = (() => {
+    try {
+        const on = new URLSearchParams(window.location.search).get('preview') === 'appfirst';
+        if (on) sessionStorage.setItem('union_preview_appfirst', '1');
+        return on || sessionStorage.getItem('union_preview_appfirst') === '1';
+    } catch (_) {
+        return false;
+    }
+})();
+
 // Called by showMeetBanner after a sponsor link checks out.
 function maybeShowAppFirstSponsorPage(token) {
-    if (typeof APP_FIRST_SPONSOR_PAGE === 'undefined' || !APP_FIRST_SPONSOR_PAGE) return;
-    if (!isIphoneWeb()) return;
+    const switchedOn = typeof APP_FIRST_SPONSOR_PAGE !== 'undefined' && APP_FIRST_SPONSOR_PAGE;
+    if (!switchedOn && !APP_FIRST_PREVIEW) return;
+    if (oauthPlatform() !== 'web') return;
+    if (!APP_FIRST_PREVIEW && !isIphoneWeb()) return;
     const block = document.getElementById('authAppFirst');
     const storeBtn = document.getElementById('authAppFirstStore');
     if (!block || !storeBtn) return;

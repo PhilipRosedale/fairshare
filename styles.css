@@ -5617,3 +5617,14 @@ body.oauth-apple-on .btn-oauth-apple { display: flex; }
     .union-fan.closing .ufi { animation: none; opacity: 0; }
     .union-fan-scrim, .union-fan-close, .pay-modepill, .pay-qrcard, .pay-receipt, .pay-conf, .pay-conf .tick, .pay-gpanel { animation: none; }
 }
+
+/* Sponsored guest sign-up (one tap, email as fallback) */
+.auth-sponsored .auth-tabs,
+.auth-sponsored #authGetApp { display: none; }
+.auth-sponsor-quick .auth-social { margin-bottom: 0.75rem; }
+.auth-sponsor-terms { font-size: 0.78rem; color: var(--dark-gray); text-align: center; line-height: 1.45; margin: 0 0 1rem; }
+.auth-sponsor-terms a { color: var(--primary-color); text-decoration: none; }
+.auth-sponsor-links { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; margin-bottom: 1rem; }
+.auth-text-link { background: none; border: none; padding: 0.35rem; font-size: 0.9rem; color: var(--primary-color); cursor: pointer; }
+.auth-text-link:hover { text-decoration: underline; }
+.auth-text-link-muted { color: var(--dark-gray); font-size: 0.85rem; }

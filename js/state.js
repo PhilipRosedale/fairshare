@@ -16,6 +16,11 @@ let introSubjectContactId = null; // "Intro" from contact details — first part
 let introSubjectContactName = '';
 let sponsorShareInfoContactId = null;
 let sponsorShareInfoContactName = '';
+// New member who just joined through an invite: run the short welcome
+// (name -> share contact info -> get the app) once they land on their
+// sponsor's card.
+let pendingWelcomeOnboarding = false;
+let welcomeChainActive = false;
 let vouchWithContactId = null;
 let vouchWithContactName = '';
 let contactSelfieId = null;

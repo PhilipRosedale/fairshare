@@ -1,23 +1,19 @@
-function candidateEndorsementStats(endorsementsForCandidate, roundOpenedAt, periodDays, memberPct, activeCount) {
+// tally comes from get_endorsement_tallies: { votes, endorsers }, where votes
+// includes Membership votes delegated to the endorsers.
+function candidateEndorsementStats(tally, roundOpenedAt, periodDays, memberPct, activeCount) {
+    const count = tally?.votes || 0;
+    const direct = tally?.endorsers || 0;
     if (!isVotingPeriodMode(selectedGroup?.constitution) || !roundOpenedAt || !periodDays) {
-        const count = endorsementsForCandidate.length;
         const threshold = Math.max(1, Math.ceil((activeCount || 0) * memberPct));
-        return { count, threshold, periodMode: false };
+        return { count, direct, threshold, periodMode: false };
     }
     const windowEnd = new Date(roundOpenedAt);
     windowEnd.setDate(windowEnd.getDate() + periodDays);
-    const opened = new Date(roundOpenedAt);
-    const inWindow = endorsementsForCandidate.filter(e => {
-        const t = new Date(e.created_at);
-        return t >= opened && t < windowEnd;
-    });
-    const participants = new Set(inWindow.map(e => e.endorser_id)).size;
-    const count = inWindow.length;
     const expired = new Date() >= windowEnd;
     const threshold = expired
-        ? Math.max(1, Math.ceil(participants * memberPct))
+        ? Math.max(1, Math.ceil(count * memberPct))
         : Math.max(1, Math.ceil((activeCount || 0) * memberPct));
-    return { count, threshold, periodMode: true, expired };
+    return { count, direct, threshold, periodMode: true, expired };
 }
 
 async function loadCandidatesList() {
@@ -43,11 +39,8 @@ async function loadCandidatesList() {
         .select('candidate_id, endorser_id, created_at')
         .eq('group_id', selectedGroup.id);
 
-    const endorseByCandidate = {};
     const myEndorsements = new Set();
     (endorsements || []).forEach(e => {
-        if (!endorseByCandidate[e.candidate_id]) endorseByCandidate[e.candidate_id] = [];
-        endorseByCandidate[e.candidate_id].push(e);
         if (e.endorser_id === currentUser.id) myEndorsements.add(e.candidate_id);
     });
 
@@ -79,11 +72,16 @@ async function loadCandidatesList() {
         };
     });
 
-    const { count: activeCount } = await db
-        .from('members')
-        .select('*', { count: 'exact', head: true })
-        .eq('group_id', selectedGroup.id)
-        .eq('status', 'active');
+    const [{ count: activeCount }, { data: tallies, error: tallyError }] = await Promise.all([
+        db.from('members')
+            .select('*', { count: 'exact', head: true })
+            .eq('group_id', selectedGroup.id)
+            .eq('status', 'active'),
+        db.rpc('get_endorsement_tallies', { p_group_id: selectedGroup.id })
+    ]);
+    if (tallyError) console.warn('get_endorsement_tallies:', tallyError);
+    const tallyMap = {};
+    (tallies || []).forEach(t => { tallyMap[t.candidate_id] = t; });
 
     const memberPct = parseNewMemberThreshold(selectedGroup.constitution);
 
@@ -91,15 +89,18 @@ async function loadCandidatesList() {
         const endorsed = myEndorsements.has(c.user_id);
         const roundKey = 'candidate:' + c.user_id;
         const stats = candidateEndorsementStats(
-            endorseByCandidate[c.user_id] || [],
+            tallyMap[c.user_id],
             roundMap[roundKey],
             periodDays,
             memberPct,
             activeCount
         );
+        const delegatedNote = stats.count > stats.direct
+            ? ` from ${stats.direct} endorser${stats.direct === 1 ? '' : 's'} incl. delegated`
+            : '';
         const endorseLabel = stats.periodMode
-            ? `${stats.count}/${stats.threshold} endorsements (period)`
-            : `${stats.count}/${stats.threshold} endorsements`;
+            ? `${stats.count}/${stats.threshold} votes (period)${delegatedNote}`
+            : `${stats.count}/${stats.threshold} votes${delegatedNote}`;
         const sponsorInfo = sponsorMap[c.user_id];
         return `<div class="member-item" style="flex-direction:column;align-items:stretch;gap:0.5rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -141,7 +142,7 @@ async function endorse(candidateId) {
         showToast('Candidate admitted to the group!', 'success');
         await loadMyGroups();
     } else {
-        showToast('Endorsement recorded', 'info');
+        showToast(data ? `Endorsement recorded (${data.endorsements}/${data.threshold} votes)` : 'Endorsement recorded', 'info');
     }
     await loadCandidatesList();
 }

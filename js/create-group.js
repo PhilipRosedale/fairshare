@@ -46,6 +46,7 @@ function buildDefaultConstitution(name, currencyEnabled, currencyName, currencyS
         text += 'In economic matters, we choose the Currency Name: ' + currencyName + ' $CURRENCY_NAME, and the Currency Symbol: ' + currencySymbol + ' $CURRENCY_SYMBOL, and to Change Currency Rates: 66% $CHANGE_CURRENCY_RATES_PERCENTAGE of member\'s vote is required.\n\n';
     }
     text += 'To Approve New Member: 100% $NEW_MEMBER_PERCENTAGE of member\'s vote is required.\n\n';
+    text += issueTypesClause() + '\n\n';
     text += 'Any member may propose amendment to this constitution. To Approve Amendment: 100% $AMENDMENT_PERCENTAGE of member\'s vote is required.';
     text += '\n\nAny member may write a proposed accord. To Approve a proposed accord: 50% $ACCORD_PERCENTAGE of member\'s vote is required.';
     return text;

@@ -65,6 +65,7 @@ const CONSTITUTION_TAG_REPAIRS = [
     { name: 'NEW_MEMBER_PERCENTAGE', pattern: /(To Approve New Member:\s*\d+%)(?!\s*\$NEW_MEMBER_PERCENTAGE)/i },
     { name: 'AMENDMENT_PERCENTAGE', pattern: /(To Approve Amendment:\s*\d+%)(?!\s*\$AMENDMENT_PERCENTAGE)/i },
     { name: 'ACCORD_PERCENTAGE', pattern: /(To Approve a proposed accord:\s*\d+%)(?!\s*\$ACCORD_PERCENTAGE)/i },
+    { name: 'ISSUE_TYPES', pattern: /(Issue Types:\s*[^\n$.]+)(?!\s*\$ISSUE_TYPES)/i },
 ];
 
 function normalizeConstitutionText(text) {
@@ -128,6 +129,10 @@ function findConstitutionTagInsertAt(text, valueStart, tagName) {
         const comma = text.indexOf(',', valueStart);
         if (comma !== -1) end = Math.min(end, comma);
     }
+    if (tagName === 'ISSUE_TYPES') {
+        const period = text.indexOf('.', valueStart);
+        if (period !== -1) end = Math.min(end, period);
+    }
     return end;
 }
 
@@ -144,8 +149,31 @@ function repairMissingConstitutionTags(text) {
     return result;
 }
 
+// Set when the proposer adds the vote-delegation clause to a constitution that lacks one.
+let amendmentTemplateOverride = null;
+
 function getAmendmentConstitutionTemplate(group) {
+    if (amendmentTemplateOverride && amendmentTemplateOverride.groupId === group?.id) {
+        return amendmentTemplateOverride.text;
+    }
     return repairMissingConstitutionTags(group?.constitution || '');
+}
+
+function addIssueTypesClauseToAmendment() {
+    if (!selectedGroup) return;
+    const template = getAmendmentConstitutionTemplate(selectedGroup);
+    if (!constitutionHasTag(template, 'ISSUE_TYPES')) {
+        const edited = buildConstitutionFromVariables(
+            restoreConstitutionTags(getAmendmentEditorDisplayText(), template),
+            getAmendmentEditorVariableValues()
+        );
+        amendmentTemplateOverride = {
+            groupId: selectedGroup.id,
+            text: edited.trimEnd() + '\n\n' + issueTypesClause()
+        };
+        initAmendmentConstitutionEditor(selectedGroup);
+    }
+    document.getElementById('addIssueTypesClauseBtn')?.remove();
 }
 
 // Editable constitution variables — each maps to a $TAG in the stored constitution text.
@@ -314,6 +342,24 @@ const CONSTITUTION_VARIABLE_FIELDS = [
             return { textBefore: m[1], value: m[2], textAfter: m[3] };
         },
     },
+    {
+        tag: 'ISSUE_TYPES',
+        label: 'Delegable issue types (comma-separated)',
+        inputType: 'text',
+        extract(text) {
+            return parseIssueTypes(text).join(', ');
+        },
+        apply(text, value) {
+            const v = normalizeIssueTypeList(value).join(', ');
+            if (!v) return text;
+            return text.replace(/(Issue Types:\s*)[^\n$]+?(\s*\$ISSUE_TYPES)/i, `$1${v}$2`);
+        },
+        splitEditorSegment(rawSlice) {
+            const m = rawSlice.match(/^([\s\S]*?Issue Types:\s*)([^\n$]+?)(\s*\$ISSUE_TYPES)$/i);
+            if (!m) return null;
+            return { textBefore: m[1], value: m[2].trim() };
+        },
+    },
 ];
 
 function getActiveConstitutionVariableFields(template) {
@@ -469,12 +515,15 @@ function initAmendmentConstitutionEditor(group) {
     if (!editor) return;
     editor.innerHTML = renderAmendmentConstitutionEditorHTML(template);
     resizeConstitutionVarInputs(editor);
-    editor.addEventListener('input', (e) => {
-        if (e.target.classList?.contains('constitution-var-input')) {
-            resizeConstitutionVarInput(e.target);
-        }
-        updateAmendmentPreview();
-    });
+    if (!editor.dataset.inputBound) {
+        editor.dataset.inputBound = '1';
+        editor.addEventListener('input', (e) => {
+            if (e.target.classList?.contains('constitution-var-input')) {
+                resizeConstitutionVarInput(e.target);
+            }
+            updateAmendmentPreview();
+        });
+    }
     updateAmendmentPreview();
 }
 
@@ -507,18 +556,22 @@ function restoreConstitutionTags(displayText, templateText) {
         const segAfter = stripConstitutionTags(template.slice(nextStart, nextEnd));
 
         let insertAt = text.length;
+        const anchor = getConstitutionTagAnchor(segBefore);
+        const anchorPos = anchor.trim() ? text.indexOf(anchor, cursor) : -1;
+        // Clauses often end alike ("of member's vote is required"), so the next
+        // segment's prefix must be searched for after this tag's own label.
+        let searchFrom = cursor;
+        if (anchorPos !== -1) searchFrom = anchorPos + anchor.length;
+        else if (segBefore.trim()) searchFrom = Math.min(text.length, cursor + 1);
+
         const nextPrefix = getStablePrefix(segAfter, 40);
         if (nextPrefix.length >= 8) {
-            const nextPos = text.indexOf(nextPrefix, cursor);
+            const nextPos = text.indexOf(nextPrefix, searchFrom);
             if (nextPos !== -1) insertAt = nextPos;
         }
 
-        if (insertAt === text.length) {
-            const anchor = getConstitutionTagAnchor(segBefore);
-            const anchorPos = text.indexOf(anchor, cursor);
-            if (anchorPos !== -1) {
-                insertAt = findConstitutionTagInsertAt(text, anchorPos + anchor.length, tm[1]);
-            }
+        if (insertAt === text.length && anchorPos !== -1) {
+            insertAt = findConstitutionTagInsertAt(text, anchorPos + anchor.length, tm[1]);
         }
 
         if (insertAt < cursor) insertAt = cursor;
@@ -837,7 +890,7 @@ async function loadConstitutionContent() {
                 .order('resolved_at', { ascending: false })
                 .limit(20),
             db.from('members')
-                .select('*', { count: 'exact', head: true })
+                .select('user_id')
                 .eq('group_id', groupId)
                 .eq('status', 'active')
         ]);
@@ -853,7 +906,8 @@ async function loadConstitutionContent() {
         const pastAmendments = pastResult.data;
         const activeProposals = activeProposalResult.data;
         const pastProposals = pastProposalResult.data;
-        const activeMembers = memberResult.count;
+        const activeIds = (memberResult.data || []).map(m => m.user_id);
+        const activeMembers = activeIds.length;
 
         // Get vote counts for all amendments and proposals we're showing
         const allAmendmentIds = [
@@ -886,10 +940,15 @@ async function loadConstitutionContent() {
         let proposalVotesMap = {};
         let myProposalVotesMap = {};
         if (allProposalIds.length > 0) {
-            const { data: votes } = await db
-                .from('accord_votes')
-                .select('accord_id, user_id, vote')
-                .in('accord_id', allProposalIds);
+            const hasOpenProposals = (activeProposals || []).length > 0;
+            const [{ data: votes }, { data: openTallies }] = await Promise.all([
+                db.from('accord_votes')
+                    .select('accord_id, user_id, vote')
+                    .in('accord_id', allProposalIds),
+                hasOpenProposals
+                    ? db.rpc('get_accord_tallies', { p_group_id: groupId })
+                    : Promise.resolve({ data: [] })
+            ]);
 
             if (myGen !== _constitutionLoadGen) return;
 
@@ -898,6 +957,12 @@ async function loadConstitutionContent() {
                 if (v.vote) proposalVotesMap[v.accord_id].approve++;
                 else proposalVotesMap[v.accord_id].reject++;
                 if (v.user_id === currentUser.id) myProposalVotesMap[v.accord_id] = v.vote;
+            });
+
+            // Open proposals use server tallies, which include delegated votes as resolve_accord counts them.
+            // Resolved proposals show their direct votes since delegations may have changed since.
+            (openTallies || []).forEach(t => {
+                proposalVotesMap[t.accord_id] = { approve: t.approve, reject: t.reject };
             });
         }
 
@@ -1073,6 +1138,7 @@ function renderProposalCard(a, votesMap, myVotesMap, activeMemberCount) {
         </div>
         <div class="amendment-meta">
             Proposed by ${esc(a.proposer?.display_name || 'Unknown')}
+            ${a.issue_type ? `&middot; Issue: ${esc(a.issue_type)}` : ''}
             &middot; ${a.status === 'voting' ? timeLeft : (a.resolved_at ? new Date(a.resolved_at).toLocaleDateString() : '')}
         </div>
         <div class="vote-bar">
@@ -1218,6 +1284,9 @@ async function submitProposal() {
         text: proposalText,
         threshold
     };
+    const issueIndex = document.getElementById('proposalIssueType')?.value;
+    const issueType = issueIndex ? parseIssueTypes(constitutionText)[Number(issueIndex)] : null;
+    if (issueType) proposalRow.issue_type = issueType;
 
     if (periodDays) {
         const expires = new Date();

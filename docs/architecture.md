@@ -56,6 +56,7 @@ See [`fairshare-schema.sql`](../fairshare-schema.sql) for the full schema. Summa
 | `compute_tally` | Compute median of votes; auto-applies when enough members vote (per `$CHANGE_CURRENCY_RATES_PERCENTAGE`) |
 | `distribute_daily_income` | Mint and distribute daily income to all active members |
 | `resolve_amendment` | Count amendment votes, apply constitution changes if passed |
+| `set_vote_delegation` / `withdraw_vote_delegation` | Delegate (or stop delegating) your vote on an `$ISSUE_TYPES` issue type; see `docs/constitution.md` |
 | `get_sponsorship_by_token` | Public lookup of invite details (no auth required) |
 | `log_group_event` | Client-side helper to insert events (e.g. `amendment_proposed`) |
 

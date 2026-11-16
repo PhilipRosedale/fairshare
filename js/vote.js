@@ -48,6 +48,9 @@ async function castVote(e, voteType) {
         value = value / 100;
     }
 
+    // Close any expired round first so this vote opens a fresh one instead of being cleared with it
+    await ensureVotingFinalized(selectedGroup.id);
+
     // Upsert vote (unique constraint on group_id, user_id, vote_type)
     const { error } = await db.from('votes').upsert({
         group_id: selectedGroup.id,
@@ -59,8 +62,6 @@ async function castVote(e, voteType) {
     if (error) { showToast(error.message, 'error'); return; }
 
     closeModal();
-
-    await ensureVotingFinalized(selectedGroup.id);
 
     // Auto-tally: check if enough members have voted to apply the change
     const { data: tallyResult } = await db.rpc('compute_tally', {
@@ -80,13 +81,10 @@ async function castVote(e, voteType) {
         const displayVal = voteType === 'fee_rate'
             ? `${(tallyResult.median * 100).toFixed(1)}%`
             : `${selectedGroup.currency_symbol} ${Number(tallyResult.median).toFixed(2)}`;
-        const tallyLabel = tallyResult.voting_period
-            ? `${tallyResult.vote_count}/${tallyResult.threshold} participants`
-            : `${tallyResult.vote_count}/${tallyResult.active_members} members`;
-        showToast(`${label} updated to ${displayVal} (${tallyLabel} voted)`, 'success');
+        const delegatedNote = tallyResult.vote_count > (tallyResult.direct_vote_count ?? tallyResult.vote_count) ? ', incl. delegated' : '';
+        showToast(`${label} updated to ${displayVal} (${tallyResult.vote_count}/${tallyResult.active_members} member votes${delegatedNote})`, 'success');
     } else {
-        const needLabel = tallyResult?.voting_period ? 'participant votes' : 'votes';
-        showToast(`Vote recorded — ${tallyResult?.vote_count || 0}/${tallyResult?.threshold || '?'} ${needLabel} needed to apply ${label}`, 'info');
+        showToast(`Vote recorded — ${tallyResult?.vote_count || 0}/${tallyResult?.threshold || '?'} votes needed to apply ${label}`, 'info');
     }
 
     // Refresh the money tab to show updated rates / "Your vote" line

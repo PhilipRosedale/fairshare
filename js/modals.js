@@ -273,6 +273,8 @@ function showModal(type) {
                 const amendmentVoteCopy = votingPeriodDays && votingPeriodDays > 0
                     ? `Members vote for ${votingPeriodDays} day${votingPeriodDays === 1 ? '' : 's'}. Thresholds apply as described in the constitution.`
                     : 'Members vote for the period defined in the constitution (or 7 days if not set). Thresholds apply as described in the constitution.';
+                amendmentTemplateOverride = null;
+                const canAddIssueTypes = !constitutionHasTag(getAmendmentConstitutionTemplate(selectedGroup), 'ISSUE_TYPES');
             body.innerHTML = `
                 <h3>Propose Constitutional Amendment</h3>
                 <div class="form-group">
@@ -282,6 +284,8 @@ function showModal(type) {
                 <div class="form-group">
                     <label><span class="required-marker">*</span> Edit the constitution below</label>
                     <p class="amendment-section-hint">Variable values appear as blue fields inline. Hover a field to see its variable name.</p>
+                    ${canAddIssueTypes ? `<button type="button" id="addIssueTypesClauseBtn" class="btn btn-secondary btn-small" style="margin-bottom:0.5rem;"
+                        onclick="addIssueTypesClauseToAmendment()">+ Add vote delegation by issue type</button>` : ''}
                     <div id="amendmentConstitutionEditor" class="constitution-editor"></div>
                 </div>
                 <div class="form-group">
@@ -308,6 +312,17 @@ function showModal(type) {
             const periodSuffix = votingPeriodDays && votingPeriodDays > 0
                 ? `, with a voting period of ${votingPeriodDays} day${votingPeriodDays === 1 ? '' : 's'}`
                 : '';
+            const issueTypes = parseIssueTypes(selectedGroup?.constitution);
+            const issueTypeField = issueTypes.length
+                ? `<div class="form-group">
+                    <label>Issue type</label>
+                    <select id="proposalIssueType">
+                        <option value="">None (direct votes only)</option>
+                        ${issueTypes.map((t, i) => `<option value="${i}">${esc(t)}</option>`).join('')}
+                    </select>
+                    <p style="font-size:0.75rem;color:var(--dark-gray);margin-top:0.25rem;">Votes delegated for this issue type count toward the proposal.</p>
+                </div>`
+                : '';
             body.innerHTML = `
                 <h3>Create Proposal</h3>
                 <div class="form-group">
@@ -315,6 +330,7 @@ function showModal(type) {
                     <textarea id="proposalEditor" rows="6"
                         placeholder="Clearly describe your proposal here, e.g. 'All group members will wear blue pants at all time.'"></textarea>
                 </div>
+                ${issueTypeField}
                 <p style="font-size:0.8rem;color:var(--dark-gray);margin-top:0.5rem;">
                     When you press 'Submit Proposal', this proposal will be circulated to all group members for their vote${periodSuffix}.
                 </p>

@@ -1,14 +1,17 @@
 ---
-description: Capacitor iOS build workflow reminders
+description: Capacitor iOS build workflow — run cap:sync after web asset changes
 alwaysApply: true
 ---
 
 # Capacitor iOS Build Workflow
 
-When making changes to web assets (HTML, CSS, JS) that need to be tested on an iOS device via Xcode:
+After changing web assets that ship in the app (HTML, CSS, JS, images, or anything else copied into `www/`), **run `npm run cap:sync` yourself** before finishing the turn. It builds `www/` and syncs it to both iOS and Android. Don't just remind the user to run it.
 
-1. Run `npm run cap:sync` (builds to `www/` and syncs to iOS)
-2. In Xcode: **Product -> Clean Build Folder** (Shift+Cmd+K) if assets seem stale
-3. In Xcode: **Product -> Build** then run on device
+- Run it once, after the last web asset edit, not after every individual edit.
+- Confirm it succeeded; if it fails, report the error instead of skipping it.
+- Not needed for changes that don't ship in the app bundle (SQL, docs, scripts, Cursor rules).
 
-Always remind the user to run the sync process before rebuilding in Xcode.
+Then tell the user what's left for them in Xcode:
+
+1. **Product -> Clean Build Folder** (Shift+Cmd+K) if assets seem stale
+2. **Product -> Build**, then run on device

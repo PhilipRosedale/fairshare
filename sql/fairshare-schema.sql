@@ -913,6 +913,7 @@ $$ language plpgsql immutable;
 
 
 -- Check endorsements and admit candidate if threshold met
+-- Superseded by the delegation-weighted version in sql/vote-delegation-schema.sql
 -- Reads $NEW_MEMBER_PERCENTAGE from group constitution (default 100%)
 create or replace function public.check_endorsements(
   p_group_id uuid,
@@ -1059,6 +1060,7 @@ $$ language plpgsql security definer;
 
 
 -- Compute tally (median) of votes and update group settings
+-- Superseded by the delegation-weighted version in sql/vote-delegation-schema.sql
 -- Reads $CHANGE_CURRENCY_RATES_PERCENTAGE from constitution (default 66%)
 -- Full population: quorum = % of active members who voted
 -- Voting period: quorum = % of participants who voted in the round window
@@ -1561,6 +1563,7 @@ $$ language plpgsql security definer;
 
 
 -- Resolve an accord proposal: either early (threshold already met) or after voting expires
+-- Superseded by the delegation-weighted version in sql/vote-delegation-schema.sql
 -- Full population: approvals / active members
 -- Voting period: approvals / (approvals + rejections) among votes in the period
 create or replace function public.resolve_accord(p_accord_id uuid)

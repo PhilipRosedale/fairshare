@@ -4,8 +4,9 @@ async function loadMembersList() {
     if (!el) return;
 
     const monthAgo = new Date(Date.now() - 30 * APP_TIMING.DAY_MS).toISOString();
+    const issueTypes = parseIssueTypes(selectedGroup.constitution);
 
-    const [{ data, error }, { data: sponsorships }, { data: txns }] = await Promise.all([
+    const [{ data, error }, { data: sponsorships }, { data: txns }, myDelegates, power] = await Promise.all([
         db.from('members')
             .select('*, profiles(display_name, profile_image_url)')
             .eq('group_id', selectedGroup.id)
@@ -21,7 +22,9 @@ async function loadMembersList() {
             .select('from_user, to_user, amount, fee')
             .eq('group_id', selectedGroup.id)
             .gte('created_at', monthAgo)
-            .not('from_user', 'is', null)
+            .not('from_user', 'is', null),
+        issueTypes.length ? fetchMyDelegations(selectedGroup.id) : Promise.resolve({}),
+        issueTypes.length ? fetchVotingPower(selectedGroup.id) : Promise.resolve({})
     ]);
 
     if (error || !data) {
@@ -32,6 +35,19 @@ async function loadMembersList() {
     // Update member count display
     const countEl = document.getElementById('memberCountDisplay');
     if (countEl) countEl.textContent = `${data.length} active member${data.length === 1 ? '' : 's'}`;
+
+    const names = {};
+    data.forEach(m => { names[m.user_id] = m.profiles?.display_name || 'Unknown'; });
+    setDelegationView({
+        groupId: selectedGroup.id,
+        constitution: selectedGroup.constitution,
+        issueTypes,
+        myDelegates,
+        power,
+        activeIds: data.map(m => m.user_id),
+        names
+    });
+    renderMyDelegationsSummary();
 
     // Build a map of candidate_id → sponsor name
     const sponsorMap = {};
@@ -71,15 +87,17 @@ async function loadMembersList() {
                 <span class="member-tx-out${flow.out ? '' : ' member-tx-idle'}">-${sym} ${flow.out.toFixed(2)}</span>
             </span>`
             : '';
-        return `<div class="member-item">
+        const delegationLine = renderMemberDelegationChips(m.user_id);
+        return `<div class="member-item${delegationLine ? ' member-item-has-deleg' : ''}">
             ${avatarHtml}
             <span class="member-name">${esc(displayName)}</span>
             ${sponsorLabel ? `<span class="member-sponsor">${sponsorLabel}</span>` : ''}
             ${flowHtml}
+            ${memberDelegateButtonHtml(m.user_id)}
             ${m.user_id === currentUser?.id
                 ? '<span class="ft-open-btn-spacer" aria-hidden="true"></span>'
                 : familyTreeButtonHtml(m.user_id, displayName)}
-        </div>`;
+        </div>${delegationLine}`;
     }).join('');
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
 }

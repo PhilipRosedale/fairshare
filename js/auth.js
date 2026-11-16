@@ -5,10 +5,12 @@
 //      them hidden until deep-link handling is built, and because a Google
 //      button with no working Apple button trips App Store guideline 4.8.
 // Google is live on web (redirect), Android (native account picker) and iOS
-// (native Google SDK). Sign in with Apple shows on iOS only, where Apple
-// requires it next to any other social login (App Store guideline 4.8); on
-// web it would need a Services ID and key we have not set up. Flip this to
-// false to hide social sign-in everywhere.
+// (native Google SDK). Sign in with Apple shows in the iOS app (App Store
+// guideline 4.8 requires it next to any other social login) and on the web
+// for Apple devices (iPhone, iPad, Mac), using the Services ID
+// social.fairshare.union.web. The web secret in Supabase expires every
+// 6 months and must be regenerated from the .p8 key. Flip this to false to
+// hide social sign-in everywhere.
 const OAUTH_ENABLED = true;
 function oauthPlatform() {
     const cap = window.Capacitor;
@@ -28,8 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!OAUTH_ENABLED) return;
     const platform = oauthPlatform();
     document.body.classList.add('oauth-on');            // Google button
-    if (platform === 'ios') document.body.classList.add('oauth-apple-on');
+    if (platform === 'ios' || (platform === 'web' && isAppleDeviceWeb())) {
+        document.body.classList.add('oauth-apple-on');
+    }
 });
+
+// Web visitor on an iPhone, iPad or Mac: Sign in with Apple is the natural
+// one tap there (Face ID / Touch ID), so show it above Google.
+function isAppleDeviceWeb() {
+    const ua = navigator.userAgent || '';
+    const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    return /iPhone|iPod|iPad|Macintosh/.test(ua) || iPadOS;
+}
 
 let authScanStream = null;
 let authScanTimer = null;
@@ -49,8 +61,7 @@ function markSponsorTokenValidated() {
     // re-tap the tab.
     const signupForm = document.getElementById('signupForm');
     if (signupForm && !signupForm.classList.contains('hidden')) {
-        document.getElementById('signupGate')?.classList.add('hidden');
-        document.getElementById('signupFields')?.classList.remove('hidden');
+        switchAuthTab('signup');
     }
 }
 
@@ -62,6 +73,28 @@ function hasInviteOrMeetToken() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('invite') || params.get('meet')) return true;
     return hasValidatedSponsorToken;
+}
+
+// Sponsored guests (arrived through a valid sponsor link) get a one-tap
+// sign-up: Google (and Apple on iOS) up top, email as a fallback. The
+// Log In / Sign Up tabs and the App Store badge are hidden on this screen;
+// the app is offered after they're in, not before.
+let sponsorEmailChosen = false;
+function applySponsorSignupMode(sponsored) {
+    const quick = document.getElementById('sponsorQuick');
+    const on = Boolean(sponsored && quick && OAUTH_ENABLED && !appFirstSponsorActive);
+    document.getElementById('authScreen')?.classList.toggle('auth-sponsored', on);
+    if (quick) quick.classList.toggle('hidden', !on);
+    if (on && !sponsorEmailChosen) {
+        document.getElementById('signupFields')?.classList.add('hidden');
+    }
+}
+
+function showSponsorEmailSignup() {
+    sponsorEmailChosen = true;
+    document.getElementById('signupFields')?.classList.remove('hidden');
+    document.getElementById('sponsorEmailLink')?.classList.add('hidden');
+    document.getElementById('signupName')?.focus();
 }
 
 function switchAuthTab(tab) {
@@ -79,6 +112,7 @@ function switchAuthTab(tab) {
         document.getElementById('signupGate').classList.toggle('hidden', hasToken);
         document.getElementById('signupFields').classList.toggle('hidden', !hasToken || appFirstSponsorActive);
     }
+    applySponsorSignupMode(tab === 'signup' && hasInviteOrMeetToken());
     if (tab === 'forgot') {
         const loginEmail = document.getElementById('loginEmail')?.value?.trim();
         const forgotEmail = document.getElementById('forgotEmail');

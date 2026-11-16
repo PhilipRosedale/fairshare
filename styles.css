@@ -5637,4 +5637,4 @@ body.oauth-apple-on .btn-oauth-apple { display: flex; }
 .welcome-modal .welcome-actions { display: flex; justify-content: center; margin-top: 0.75rem; }
 .welcome-modal .welcome-actions .btn { width: 100%; }
 .welcome-modal .welcome-store { display: flex; justify-content: center; }
-
+.welcome-modal .welcome-note { font-size: 0.8rem; color: var(--dark-gray); text-align: center; margin: 0.5rem 0 0; }

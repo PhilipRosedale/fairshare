@@ -155,8 +155,9 @@ function showModal(type) {
                 <h3 class="welcome-title">Get Union on your iPhone</h3>
                 <p class="welcome-sub">The app lets you know when friends connect, message you, or are nearby. The website can't send notifications on iPhone.</p>
                 <div class="welcome-store">
-                    <a class="auth-app-store-btn" href="${APP_STORE_URL}" target="_blank" rel="noopener" onclick="closeModal()"><img src="assets/app-store-badge.svg" alt="Download on the App Store" width="132" height="44"></a>
+                    <a class="auth-app-store-btn" href="${APP_STORE_URL}" target="_blank" rel="noopener" onclick="openAppStoreWithHandoff(event); closeModal()"><img src="assets/app-store-badge.svg" alt="Download on the App Store" width="132" height="44"></a>
                 </div>
+                <p class="welcome-note">You'll be signed in when you open the app.</p>
                 <div class="welcome-actions">
                     <button type="button" class="auth-text-link auth-text-link-muted" onclick="closeModal()">Continue on the web</button>
                 </div>
@@ -1090,6 +1091,7 @@ function shouldOfferGetApp() {
 
 function showGetAppStep() {
     if (!currentUser || !shouldOfferGetApp()) return;
+    if (typeof prefetchAppHandoff === 'function') prefetchAppHandoff();
     showModal('getApp');
 }
 

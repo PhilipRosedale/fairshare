@@ -226,8 +226,9 @@ function toggleHeaderMenu(e) {
     if (menu.classList.contains('hidden')) {
         menu.classList.remove('hidden');
         if (btn) btn.setAttribute('aria-expanded', 'true');
-        document.getElementById('headerGetAppItem')?.classList.toggle('hidden',
-            !(typeof shouldOfferGetApp === 'function' && shouldOfferGetApp()));
+        const offerApp = typeof shouldOfferGetApp === 'function' && shouldOfferGetApp();
+        document.getElementById('headerGetAppItem')?.classList.toggle('hidden', !offerApp);
+        if (offerApp && typeof prefetchAppHandoff === 'function') prefetchAppHandoff();
         // Defer attaching the outside-click listener so this same click
         // doesn't immediately close the menu we just opened.
         setTimeout(() => {
@@ -271,7 +272,7 @@ function onHeaderMenuClick(action) {
         };
         jump();
     } else if (action === 'getapp') {
-        if (typeof openExternalUrl === 'function') openExternalUrl(APP_STORE_URL);
+        if (typeof openAppStoreWithHandoff === 'function') openAppStoreWithHandoff();
         else window.open(APP_STORE_URL, '_blank', 'noopener');
     } else if (action === 'logout') {
         if (typeof logout === 'function') logout();

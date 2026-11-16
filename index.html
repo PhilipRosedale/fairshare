@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <!-- Apple Smart App Banner (Safari on iPhone/iPad). Shows "View" or "Open"
+         for the Union app at the top of the page. Kept as a plain tag in the
+         HTML, which is what Safari reliably reads. -->
+    <meta name="apple-itunes-app" content="app-id=6762217370, app-argument=https://union42.net/">
     <script>
-    // Apple Smart App Banner (Safari on iPhone/iPad only). Shows "View" or
-    // "Open" for the Union app at the top of the page. Skipped on invite links
-    // (?meet= / ?invite=) so a new guest can join on the web first, and on
-    // localhost. Must be written while the page is parsing; Safari ignores a
-    // tag added later.
+    // On invite links (?meet= / ?invite=), take the banner off so a new guest
+    // joins on the web first instead of being sent to the App Store.
     (function () {
         var p = new URLSearchParams(location.search);
-        if (p.has('meet') || p.has('invite')) return;
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
-        var arg = encodeURI(location.origin + location.pathname);
-        document.write('<meta name="apple-itunes-app" content="app-id=6762217370, app-argument=' + arg + '">');
+        if (p.has('meet') || p.has('invite')) {
+            var m = document.querySelector('meta[name="apple-itunes-app"]');
+            if (m) m.remove();
+        }
     })();
     </script>
     <script>

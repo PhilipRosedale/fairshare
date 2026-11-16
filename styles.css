@@ -957,6 +957,53 @@ body {
 .member-tx-out { color: var(--red); }
 .member-tx-flow .member-tx-idle { color: var(--dark-gray); opacity: 0.5; }
 
+/* Vote delegation (liquid democracy) */
+.member-item.member-item-has-deleg { border-bottom: none; padding-bottom: 0.2rem; }
+.member-deleg-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0 0 0.6rem calc(32px + 0.6rem);
+    border-bottom: 1px solid var(--light-gray);
+}
+.member-deleg-line:last-child { border-bottom: none; }
+.member-deleg-chip {
+    font-size: 0.72rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    white-space: nowrap;
+    background: var(--light-gray);
+    color: var(--dark-gray);
+}
+.member-deleg-power { background: #cce5ff; color: #004085; font-weight: 600; }
+.member-deleg-decisive { background: #d4edda; color: #155724; }
+.member-delegate-btn + .ft-open-btn,
+.member-delegate-btn + .ft-open-btn-spacer,
+.member-delegate-spacer + .ft-open-btn,
+.member-delegate-spacer + .ft-open-btn-spacer { margin-left: 0.25rem; }
+.my-delegations {
+    background: var(--light-gray);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+.my-deleg-title { font-weight: 600; margin-bottom: 0.35rem; }
+.my-deleg-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+}
+.my-deleg-issue { font-weight: 500; min-width: 7.5em; }
+.my-deleg-status { color: var(--dark-gray); flex: 1; min-width: 0; }
+.my-deleg-hint { font-size: 0.75rem; color: var(--dark-gray); margin-top: 0.35rem; }
+.my-deleg-hint .lucide-icon { width: 13px; height: 13px; vertical-align: -2px; }
+.deleg-options { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.deleg-option { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.deleg-option-label { font-weight: 500; }
+.deleg-option-note { font-size: 0.75rem; color: var(--dark-gray); }
+
 /* Modal overlay (above contact list and meet overlay so dialogs are visible) */
 .modal-overlay {
     position: fixed;

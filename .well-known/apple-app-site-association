@@ -5,7 +5,8 @@
         "appIDs": ["Q4H43839LK.social.fairshare.union"],
         "components": [
           { "/": "/", "?": { "meet": "?*" }, "comment": "Sponsor / meet links open the app" },
-          { "/": "/", "?": { "invite": "?*" }, "comment": "Group invite links open the app" }
+          { "/": "/", "?": { "invite": "?*" }, "comment": "Group invite links open the app" },
+          { "/": "/", "?": { "handoff": "?*" }, "comment": "One-time sign-in links from the website open the app" }
         ]
       }
     ]

@@ -101,7 +101,7 @@ function renderProfileScreen() {
                     </div>
                 </div>
                 <hr class="pref-divider">
-                <h4 class="pref-section-title">Preferences</h4>
+                <h4 class="pref-section-title" id="prefSectionPreferences">Preferences</h4>
                 ${canUsePush() ? `
                 <div class="form-group pref-checkbox-row">
                     <input type="checkbox" id="prefPushNotifications" style="flex-shrink:0;">

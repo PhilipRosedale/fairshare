@@ -129,6 +129,40 @@ function showModal(type) {
             break;
         }
 
+        case 'welcomeName': {
+            document.getElementById('modalBody').classList.add('welcome-modal');
+            const spName = esc(welcomeSponsorName || 'your sponsor');
+            body.innerHTML = `
+                <h3 class="welcome-title">Welcome to Union</h3>
+                <p class="welcome-sub">You're connected with ${spName}. What should we call you?</p>
+                <div class="form-group">
+                    <input type="text" id="welcomeNameInput" maxlength="80" autocomplete="name" placeholder="Your name" value="${esc(suggestedWelcomeName())}">
+                    <p id="welcomeNameError" class="welcome-error hidden">Enter a name so people know it's you.</p>
+                </div>
+                <div class="form-actions welcome-actions">
+                    <button type="button" class="btn btn-primary" id="welcomeNameBtn" onclick="submitWelcomeName()">Continue</button>
+                </div>
+            `;
+            const input = document.getElementById('welcomeNameInput');
+            input?.addEventListener('input', () => document.getElementById('welcomeNameError')?.classList.add('hidden'));
+            input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitWelcomeName(); });
+            break;
+        }
+
+        case 'getApp':
+            document.getElementById('modalBody').classList.add('welcome-modal');
+            body.innerHTML = `
+                <h3 class="welcome-title">Get the Union app</h3>
+                <p class="welcome-sub">Get a heads-up when friends connect, and keep your QR code one tap away. You're all set on the web too.</p>
+                <div class="welcome-store">
+                    <a class="auth-app-store-btn" href="${APP_STORE_URL}" target="_blank" rel="noopener" onclick="closeModal()"><img src="assets/app-store-badge.svg" alt="Download on the App Store" width="132" height="44"></a>
+                </div>
+                <div class="welcome-actions">
+                    <button type="button" class="auth-text-link auth-text-link-muted" onclick="closeModal()">Continue on the web</button>
+                </div>
+            `;
+            break;
+
         case 'betaIosApp':
             body.classList.add('beta-ios-modal');
             body.innerHTML = `
@@ -302,6 +336,7 @@ function modalCloseX(onclick = 'closeModal()') {
 }
 
 function closeModal(_options = {}) {
+    const closingShareInfo = Boolean(sponsorShareInfoContactId);
     if (heartDialogTimer) { clearTimeout(heartDialogTimer); heartDialogTimer = null; }
     if (shareLocationContactId) {
         updateShareLocationCheckbox(shareLocationContactId, false, null);
@@ -324,6 +359,11 @@ function closeModal(_options = {}) {
     document.getElementById('modalBody').classList.remove('modal-wide');
     document.getElementById('modalBody').classList.remove('share-modal');
     document.getElementById('modalBody').classList.remove('beta-ios-modal');
+    document.getElementById('modalBody').classList.remove('welcome-modal');
+    if (closingShareInfo && welcomeChainActive) {
+        welcomeChainActive = false;
+        setTimeout(showGetAppStep, 300);
+    }
 }
 
 function openBetaIosTestFlight() {
@@ -466,6 +506,11 @@ function openSponsorShareInfoDialog(contactId) {
 function maybeOfferSponsorShareInfo(contactId) {
     if (!contactId || !currentUser || !currentProfile?.sponsor_id) return;
     if (currentProfile.sponsor_id !== contactId) return;
+    if (pendingWelcomeOnboarding) {
+        pendingWelcomeOnboarding = false;
+        requestAnimationFrame(() => openWelcomeOnboarding(contactId));
+        return;
+    }
     try {
         if (localStorage.getItem(sponsorShareInfoPromptStorageKey(currentUser.id, contactId)) === '1') return;
     } catch (_) { /* ignore */ }
@@ -980,3 +1025,71 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// --- Welcome steps for a new member who joined through an invite ---
+// 1) What should we call you?  2) Share contact info with your sponsor
+// (existing dialog)  3) Get the app (web only, not on Android).
+let welcomeSponsorName = '';
+let welcomeSponsorContactId = null;
+
+function openWelcomeOnboarding(contactId) {
+    const row = (contactsLoadedRows || []).find(r => r.contact?.contact_id === contactId);
+    welcomeSponsorName = row?.profile?.display_name || welcomeSponsorName || 'your sponsor';
+    welcomeSponsorContactId = contactId;
+    showModal('welcomeName');
+    setTimeout(() => document.getElementById('welcomeNameInput')?.focus(), 50);
+}
+
+// Pre-fill the name from Google/Apple. Leave it blank when all we have is
+// the email prefix (e.g. an Apple "Hide My Email" relay address).
+function suggestedWelcomeName() {
+    const dn = (currentProfile?.display_name || '').trim();
+    const local = String(currentUser?.email || '').split('@')[0];
+    if (!dn || (local && dn === local)) return '';
+    return dn;
+}
+
+async function submitWelcomeName() {
+    const input = document.getElementById('welcomeNameInput');
+    const name = (input?.value || '').trim();
+    if (!name) {
+        document.getElementById('welcomeNameError')?.classList.remove('hidden');
+        input?.focus();
+        return;
+    }
+    const btn = document.getElementById('welcomeNameBtn');
+    if (btn) btn.disabled = true;
+    if (name !== (currentProfile?.display_name || '')) {
+        const { error } = await db.from('profiles').update({ display_name: name }).eq('id', currentUser.id);
+        if (error) {
+            console.error('submitWelcomeName:', error);
+            showToast('Could not save your name. Try again.', 'error');
+            if (btn) btn.disabled = false;
+            return;
+        }
+        if (currentProfile) currentProfile.display_name = name;
+    }
+    const cid = welcomeSponsorContactId;
+    closeModal();
+    let shareDone = false;
+    try {
+        shareDone = localStorage.getItem(sponsorShareInfoPromptStorageKey(currentUser.id, cid)) === '1';
+    } catch (_) { /* ignore */ }
+    if (cid && !shareDone) {
+        welcomeChainActive = true;
+        setTimeout(() => openSponsorShareInfoDialog(cid), 250);
+    } else {
+        setTimeout(showGetAppStep, 250);
+    }
+}
+
+function shouldOfferGetApp() {
+    if (IS_NATIVE) return false;
+    return !/Android/i.test(navigator.userAgent || '');
+}
+
+function showGetAppStep() {
+    if (!currentUser || !shouldOfferGetApp()) return;
+    showModal('getApp');
+}
+

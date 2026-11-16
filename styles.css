@@ -5628,3 +5628,13 @@ body.oauth-apple-on .btn-oauth-apple { display: flex; }
 .auth-text-link { background: none; border: none; padding: 0.35rem; font-size: 0.9rem; color: var(--primary-color); cursor: pointer; }
 .auth-text-link:hover { text-decoration: underline; }
 .auth-text-link-muted { color: var(--dark-gray); font-size: 0.85rem; }
+
+/* Welcome steps for new members (name, get the app) */
+.welcome-modal .welcome-title { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.4rem; text-align: center; }
+.welcome-modal .welcome-sub { color: var(--dark-gray); text-align: center; line-height: 1.45; margin: 0 0 1.1rem; }
+.welcome-modal input#welcomeNameInput { font-size: 1.05rem; text-align: center; }
+.welcome-modal .welcome-error { color: #c0392b; font-size: 0.85rem; text-align: center; margin: 0.4rem 0 0; }
+.welcome-modal .welcome-actions { display: flex; justify-content: center; margin-top: 0.75rem; }
+.welcome-modal .welcome-actions .btn { width: 100%; }
+.welcome-modal .welcome-store { display: flex; justify-content: center; }
+

@@ -226,6 +226,8 @@ function toggleHeaderMenu(e) {
     if (menu.classList.contains('hidden')) {
         menu.classList.remove('hidden');
         if (btn) btn.setAttribute('aria-expanded', 'true');
+        document.getElementById('headerGetAppItem')?.classList.toggle('hidden',
+            !(typeof shouldOfferGetApp === 'function' && shouldOfferGetApp()));
         // Defer attaching the outside-click listener so this same click
         // doesn't immediately close the menu we just opened.
         setTimeout(() => {
@@ -255,8 +257,22 @@ function closeHeaderMenuOnOutsideClick(e) {
 
 function onHeaderMenuClick(action) {
     closeHeaderMenu();
-    if (action === 'profile' || action === 'preferences') {
+    if (action === 'profile') {
         navigateTo('profile');
+        window.scrollTo(0, 0);
+    } else if (action === 'preferences') {
+        navigateTo('profile');
+        // The profile screen renders async; wait for the section to exist.
+        let tries = 0;
+        const jump = () => {
+            const el = document.getElementById('prefSectionPreferences');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            else if (++tries < 20) setTimeout(jump, 100);
+        };
+        jump();
+    } else if (action === 'getapp') {
+        if (typeof openExternalUrl === 'function') openExternalUrl(APP_STORE_URL);
+        else window.open(APP_STORE_URL, '_blank', 'noopener');
     } else if (action === 'logout') {
         if (typeof logout === 'function') logout();
     }

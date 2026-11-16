@@ -312,7 +312,11 @@ function meetSuccess(contactName, contactId = null, alreadyContact = false) {
 
 function copyMeetLink() {
     if (!currentMeetUrl) return;
-    navigator.clipboard.writeText(currentMeetUrl).then(() => {
+    // via=link marks a copied (remote) invite, so the new member isn't asked
+    // for a selfie with someone who isn't in the room. The QR code itself
+    // stays a plain ?meet= link (in person).
+    const linkUrl = currentMeetUrl + (currentMeetUrl.includes('?') ? '&' : '?') + 'via=link';
+    navigator.clipboard.writeText(linkUrl).then(() => {
         showToast('Invite link copied', 'success');
         closeMeetScreen();
     }).catch(() => {

@@ -45,6 +45,7 @@ async function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const inviteToken = urlParams.get('invite');
     const meetToken = urlParams.get('meet');
+    const meetViaLink = urlParams.get('via') === 'link';
 
     let earlySession = null;
     try {
@@ -72,6 +73,7 @@ async function init() {
                 token: meetToken,
                 savedAt: Date.now(),
                 meetSource: 'URL',
+                remote: meetViaLink,
             }));
             await showMeetBanner(meetToken);
         }
@@ -541,6 +543,7 @@ async function handlePendingMeet() {
     // time). See handlePendingInvite for the cross-origin rationale.
     let token = null;
     let meetSource = 'URL';
+    let remoteInvite = false;
     let staleLocal = false;
     const stored = localStorage.getItem('fairshare_meet');
     if (stored) {
@@ -550,6 +553,7 @@ async function handlePendingMeet() {
             if (parsed.token && (Date.now() - parsed.savedAt) < ONE_DAY_MS) {
                 token = parsed.token;
                 if (parsed.meetSource === 'F2F') meetSource = 'F2F';
+                if (parsed.remote) remoteInvite = true;
             } else {
                 staleLocal = true;
             }
@@ -595,7 +599,12 @@ async function handlePendingMeet() {
         } else {
             consumed = true;
             const contactName = data?.contact_name || 'New contact';
-            if (data?.contact_id) {
+            const createdMs = Date.parse(currentUser?.created_at || '');
+            if (createdMs && (Date.now() - createdMs) < 10 * 60 * 1000) {
+                pendingWelcomeOnboarding = true;
+                welcomeSponsorName = data?.contact_name || '';
+            }
+            if (data?.contact_id && !remoteInvite) {
                 pendingPostHandshakeSelfieContactId = data.contact_id;
                 pendingPostHandshakeSelfieContactName = data.contact_name || contactName;
                 pendingBetaIosPromptAfterPostHandshakeSelfie = true;

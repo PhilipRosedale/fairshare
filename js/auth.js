@@ -600,8 +600,15 @@ async function showApp(navigateToGroupId) {
         if (currentProfile?.push_notifications !== false) subscribeToPush();
         if (typeof openPendingDirectMessageIfAny === 'function') await openPendingDirectMessageIfAny();
         await openPendingContactDetailsIfAny();
+        const hadHandshakeSelfie = Boolean(pendingPostHandshakeSelfieContactId);
         if (typeof openPostHandshakeSelfieIfPending === 'function') {
             await openPostHandshakeSelfieIfPending();
+        }
+        // Joined from a copied link (no selfie step): open the sponsor's card,
+        // which kicks off the welcome steps.
+        if (!hadHandshakeSelfie && pendingWelcomeOnboarding && currentProfile?.sponsor_id
+                && typeof openContactDetailsById === 'function') {
+            await openContactDetailsById(currentProfile.sponsor_id);
         }
         await checkPendingGroupInvitations();
         await checkPendingSuggestedPictures();

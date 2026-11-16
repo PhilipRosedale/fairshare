@@ -46,6 +46,8 @@ async function init() {
     const inviteToken = urlParams.get('invite');
     const meetToken = urlParams.get('meet');
     const meetViaLink = urlParams.get('via') === 'link';
+    const handoffToken = urlParams.get('handoff');
+    if (handoffToken) window.history.replaceState({}, document.title, window.location.pathname);
 
     let earlySession = null;
     try {
@@ -204,6 +206,16 @@ async function init() {
                 }
             }
         });
+
+        // Logged out: sign in with a one-time link from the website, if there
+        // is one (URL on the web, clipboard on the app's first launch).
+        if (!session) {
+            if (handoffToken) {
+                signInWithHandoff(handoffToken);
+            } else if (typeof tryAppHandoffFromClipboard === 'function') {
+                tryAppHandoffFromClipboard();
+            }
+        }
     } catch (e) {
         console.error('Init error:', e);
         showToast('Connection error: ' + e.message, 'error');

@@ -5,10 +5,12 @@
 //      them hidden until deep-link handling is built, and because a Google
 //      button with no working Apple button trips App Store guideline 4.8.
 // Google is live on web (redirect), Android (native account picker) and iOS
-// (native Google SDK). Sign in with Apple shows on iOS only, where Apple
-// requires it next to any other social login (App Store guideline 4.8); on
-// web it would need a Services ID and key we have not set up. Flip this to
-// false to hide social sign-in everywhere.
+// (native Google SDK). Sign in with Apple shows in the iOS app (App Store
+// guideline 4.8 requires it next to any other social login) and on the web
+// for Apple devices (iPhone, iPad, Mac), using the Services ID
+// social.fairshare.union.web. The web secret in Supabase expires every
+// 6 months and must be regenerated from the .p8 key. Flip this to false to
+// hide social sign-in everywhere.
 const OAUTH_ENABLED = true;
 function oauthPlatform() {
     const cap = window.Capacitor;
@@ -28,8 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!OAUTH_ENABLED) return;
     const platform = oauthPlatform();
     document.body.classList.add('oauth-on');            // Google button
-    if (platform === 'ios') document.body.classList.add('oauth-apple-on');
+    if (platform === 'ios' || (platform === 'web' && isAppleDeviceWeb())) {
+        document.body.classList.add('oauth-apple-on');
+    }
 });
+
+// Web visitor on an iPhone, iPad or Mac: Sign in with Apple is the natural
+// one tap there (Face ID / Touch ID), so show it above Google.
+function isAppleDeviceWeb() {
+    const ua = navigator.userAgent || '';
+    const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    return /iPhone|iPod|iPad|Macintosh/.test(ua) || iPadOS;
+}
 
 let authScanStream = null;
 let authScanTimer = null;

@@ -1018,12 +1018,141 @@ async function handleNativeAppleLogin() {
 // note that the link is for new people.
 const handledAppLinks = new Set();
 
+// ---- Web -> app login handoff ----------------------------------------------
+// Someone logged in on union42.net taps "Download on the App Store". Right
+// before the App Store opens we copy a one-time sign-in link
+// (https://union42.net/?handoff=<token_hash>) to their clipboard. The
+// app-handoff edge function mints it for the caller's own account only; it
+// works once and expires in about an hour. On the app's first launch we read
+// the clipboard once (iOS asks "Allow Paste") and, if the link is there, sign
+// them straight in, so they skip the login screen.
+const APP_HANDOFF_CACHE_MS = 30 * 60 * 1000;
+let appHandoffLink = null;
+let appHandoffFetchedAt = 0;
+let appHandoffInFlight = null;
+
+// Web only: get a sign-in link ready ahead of the tap (the copy itself has to
+// happen inside the tap, so the link must already be here by then).
+function prefetchAppHandoff() {
+    if (IS_NATIVE || !currentUser) return Promise.resolve(null);
+    if (appHandoffLink && (Date.now() - appHandoffFetchedAt) < APP_HANDOFF_CACHE_MS) {
+        return Promise.resolve(appHandoffLink);
+    }
+    if (appHandoffInFlight) return appHandoffInFlight;
+    appHandoffInFlight = (async () => {
+        try {
+            const { data } = await db.auth.getSession();
+            const accessToken = data?.session?.access_token;
+            if (!accessToken) return null;
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/app-handoff`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+            });
+            if (!res.ok) return null;
+            const body = await res.json();
+            if (!body?.token_hash) return null;
+            appHandoffLink = `${PUBLIC_APP_ORIGIN}/?handoff=${encodeURIComponent(body.token_hash)}`;
+            appHandoffFetchedAt = Date.now();
+            return appHandoffLink;
+        } catch (e) {
+            console.warn('[handoff] could not prepare app sign-in:', e);
+            return null;
+        } finally {
+            appHandoffInFlight = null;
+        }
+    })();
+    return appHandoffInFlight;
+}
+
+// Web only, from a tap: copy the sign-in link (if ready) and open the App Store.
+function openAppStoreWithHandoff(event) {
+    if (event) event.preventDefault();
+    try {
+        if (appHandoffLink && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(appHandoffLink).catch(() => {});
+        }
+    } catch (_) { /* best effort; they can still log in normally */ }
+    window.open(APP_STORE_URL, '_blank', 'noopener');
+}
+
+function extractHandoffToken(text) {
+    if (!text) return null;
+    try {
+        const u = new URL(String(text).trim());
+        const host = u.hostname.replace(/^www\./, '');
+        if (host !== 'union42.net' && host !== 'app.fairshare.social') return null;
+        return u.searchParams.get('handoff');
+    } catch (_) {
+        return null;
+    }
+}
+
+// Exchange a handoff token for a session. On success the SIGNED_IN listener
+// in init.js loads the profile and opens the app as usual.
+async function signInWithHandoff(tokenHash) {
+    if (!tokenHash) return false;
+    try {
+        const { error } = await db.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+        if (error) {
+            console.warn('[handoff] sign-in link not valid:', error.message);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.warn('[handoff] sign-in failed:', e);
+        return false;
+    }
+}
+
+// App only, first launch while logged out: look once for a link the website
+// copied. A sign-in link logs them in; an invite link opens the sponsor page.
+async function tryAppHandoffFromClipboard() {
+    if (!IS_NATIVE) return false;
+    try {
+        if (localStorage.getItem('union_handoff_checked') || localStorage.getItem('fairshare_has_account')) return false;
+        localStorage.setItem('union_handoff_checked', '1');
+    } catch (_) {
+        return false;
+    }
+    const Clipboard = window.Capacitor?.Plugins?.Clipboard;
+    if (!Clipboard || typeof Clipboard.read !== 'function') return false;
+    let text = '';
+    try {
+        text = (await Clipboard.read())?.value || '';
+    } catch (_) {
+        return false;
+    }
+    const tokenHash = extractHandoffToken(text);
+    if (tokenHash) {
+        const ok = await signInWithHandoff(tokenHash);
+        // The link is single use either way; clear it off the clipboard.
+        try { await Clipboard.write({ string: '' }); } catch (_) { /* ignore */ }
+        return ok;
+    }
+    const meetToken = extractMeetToken(text);
+    if (meetToken) {
+        await useInviteToken(meetToken);
+        return true;
+    }
+    return false;
+}
+
 async function handleIncomingAppLink(rawUrl) {
     if (!rawUrl || handledAppLinks.has(rawUrl)) return;
     let url;
     try { url = new URL(rawUrl); } catch (_) { return; }
     const host = url.hostname.replace(/^www\./, '');
     if (host !== 'union42.net' && host !== 'app.fairshare.social') return;
+
+    // One-time sign-in link from the website (see app handoff below).
+    const handoffToken = url.searchParams.get('handoff');
+    if (handoffToken) {
+        handledAppLinks.add(rawUrl);
+        let current = null;
+        try { current = (await db.auth.getSession()).data?.session || null; } catch (_) {}
+        if (!current) await signInWithHandoff(handoffToken);
+        return;
+    }
 
     const meetToken = url.searchParams.get('meet');
     const inviteToken = url.searchParams.get('invite');

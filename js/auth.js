@@ -49,8 +49,7 @@ function markSponsorTokenValidated() {
     // re-tap the tab.
     const signupForm = document.getElementById('signupForm');
     if (signupForm && !signupForm.classList.contains('hidden')) {
-        document.getElementById('signupGate')?.classList.add('hidden');
-        document.getElementById('signupFields')?.classList.remove('hidden');
+        switchAuthTab('signup');
     }
 }
 
@@ -62,6 +61,28 @@ function hasInviteOrMeetToken() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('invite') || params.get('meet')) return true;
     return hasValidatedSponsorToken;
+}
+
+// Sponsored guests (arrived through a valid sponsor link) get a one-tap
+// sign-up: Google (and Apple on iOS) up top, email as a fallback. The
+// Log In / Sign Up tabs and the App Store badge are hidden on this screen;
+// the app is offered after they're in, not before.
+let sponsorEmailChosen = false;
+function applySponsorSignupMode(sponsored) {
+    const quick = document.getElementById('sponsorQuick');
+    const on = Boolean(sponsored && quick && OAUTH_ENABLED && !appFirstSponsorActive);
+    document.getElementById('authScreen')?.classList.toggle('auth-sponsored', on);
+    if (quick) quick.classList.toggle('hidden', !on);
+    if (on && !sponsorEmailChosen) {
+        document.getElementById('signupFields')?.classList.add('hidden');
+    }
+}
+
+function showSponsorEmailSignup() {
+    sponsorEmailChosen = true;
+    document.getElementById('signupFields')?.classList.remove('hidden');
+    document.getElementById('sponsorEmailLink')?.classList.add('hidden');
+    document.getElementById('signupName')?.focus();
 }
 
 function switchAuthTab(tab) {
@@ -79,6 +100,7 @@ function switchAuthTab(tab) {
         document.getElementById('signupGate').classList.toggle('hidden', hasToken);
         document.getElementById('signupFields').classList.toggle('hidden', !hasToken || appFirstSponsorActive);
     }
+    applySponsorSignupMode(tab === 'signup' && hasInviteOrMeetToken());
     if (tab === 'forgot') {
         const loginEmail = document.getElementById('loginEmail')?.value?.trim();
         const forgotEmail = document.getElementById('forgotEmail');

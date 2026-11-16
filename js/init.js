@@ -289,6 +289,19 @@ async function rejectUnsponsoredNewAccount() {
     const createdMs = Date.parse(currentUser.created_at || '');
     if (!createdMs || (Date.now() - createdMs) > UNSPONSORED_NEW_ACCOUNT_WINDOW_MS) return false;
     if (hasPendingSponsorToken()) return false;
+    // The profile snapshot can be stale: complete_meet / claim_sponsorship
+    // set sponsor_id server-side, and the callers only reload the profile
+    // when a group was claimed (a plain 1:1 meet returns no group). Re-read
+    // it before deciding, so a just-sponsored account is never removed.
+    try {
+        const { data: fresh, error } = await db
+            .from('profiles').select('sponsor_id').eq('id', currentUser.id).single();
+        if (error || !fresh) return false;
+        if (fresh.sponsor_id) {
+            currentProfile.sponsor_id = fresh.sponsor_id;
+            return false;
+        }
+    } catch (_) { return false; }
     if (_rejectingUnsponsored) return true;
     _rejectingUnsponsored = true;
     try {

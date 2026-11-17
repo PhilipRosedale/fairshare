@@ -85,6 +85,11 @@
         <div id="inviteBannerText" style="font-size:0.9rem;color:var(--accent-color);line-height:1.5;"></div>
     </div>
 
+    <!-- App only: sign in with the one-time link copied on union42.net. -->
+    <div id="authHandoffBox" class="auth-handoff hidden">
+        <button type="button" class="btn btn-secondary auth-handoff-btn" onclick="continueFromWeb()">Joined on the web? Continue</button>
+    </div>
+
     <div class="auth-tabs">
         <div class="auth-tab active" data-tab="login" onclick="switchAuthTab('login')">Log In</div>
         <div class="auth-tab" data-tab="signup" onclick="switchAuthTab('signup')">Sign Up</div>

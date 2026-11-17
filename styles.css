@@ -5743,3 +5743,8 @@ body.oauth-apple-on .btn-oauth-apple { display: flex; }
 .welcome-modal .welcome-actions .btn { width: 100%; }
 .welcome-modal .welcome-store { display: flex; justify-content: center; }
 .welcome-modal .welcome-note { font-size: 0.8rem; color: var(--dark-gray); text-align: center; margin: 0.5rem 0 0; }
+
+/* App: continue from the web (sign-in link handoff) */
+.auth-handoff { margin: 0 0 1rem; }
+.auth-handoff-btn { width: 100%; }
+.auth-sponsored .auth-handoff { display: none; }

@@ -186,6 +186,7 @@ async function init() {
                     }
                 }, 0);
             } else if (event === 'SIGNED_OUT') {
+                if (typeof clearStoredAppHandoff === 'function') clearStoredAppHandoff();
                 try { stopLocationSharingUpdates(); } catch (_) { /* best effort */ }
                 if (typeof clearContactDetailResumeState === 'function') clearContactDetailResumeState();
                 if (typeof clearDirectMessageResumeState === 'function') clearDirectMessageResumeState();

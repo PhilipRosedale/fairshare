@@ -10,12 +10,23 @@
     <script>
     // On invite links (?meet= / ?invite=), take the banner off so a new guest
     // joins on the web first instead of being sent to the App Store.
+    // Otherwise, if this browser holds a fresh one-time app sign-in link
+    // (saved by js/auth.js), put it in the banner so "Open" logs them in.
     (function () {
         var p = new URLSearchParams(location.search);
+        var m = document.querySelector('meta[name="apple-itunes-app"]');
+        if (!m) return;
         if (p.has('meet') || p.has('invite')) {
-            var m = document.querySelector('meta[name="apple-itunes-app"]');
-            if (m) m.remove();
+            m.remove();
+            return;
         }
+        try {
+            var saved = JSON.parse(localStorage.getItem('union_app_handoff') || 'null');
+            if (saved && saved.link && (Date.now() - saved.at) < 45 * 60 * 1000
+                    && /^https:\/\/union42\.net\/\?handoff=/.test(saved.link)) {
+                m.setAttribute('content', 'app-id=6762217370, app-argument=' + saved.link);
+            }
+        } catch (e) {}
     })();
     </script>
     <script>

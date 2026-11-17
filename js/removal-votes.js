@@ -2,10 +2,12 @@
 //
 // Any active member can propose removing another. The others vote on the
 // Members tab; the person being voted on sees the vote but cannot take part.
-// When the votes reach the group's admission share (or, after the voting
-// period, a majority of eligible members) the server flips the member to
-// 'removed' and logs a member_removed event. Nothing here decides anything;
-// it only shows the state the server reports and sends votes to it.
+// Votes are counted like admissions: a voter carries the Membership votes
+// delegated to them (js/delegation.js). The moment the counted votes reach the
+// group's admission share the server flips the member to 'removed' and logs a
+// member_removed event, so a delegate holding enough votes removes someone
+// alone and at once. Nothing here decides anything; it only shows the state
+// the server reports and sends votes to it.
 
 let removalProposals = [];
 
@@ -90,7 +92,7 @@ async function withdrawRemoval(id) {
     await loadRemovalVotes();
 }
 
-// Member row "..." -> propose. Uses the shared modal container directly.
+// Member sheet -> "Propose removal from group". Uses the shared modal container directly.
 function openProposeRemoval(userId, displayName) {
     if (!selectedGroup || !currentUser || userId === currentUser.id) return;
     const overlay = document.getElementById('modalOverlay');
@@ -100,10 +102,16 @@ function openProposeRemoval(userId, displayName) {
     const name = esc(displayName || 'this member');
     const pct = Math.round((typeof parseNewMemberThreshold === 'function' ? parseNewMemberThreshold(selectedGroup.constitution) : 1) * 100);
     const days = typeof parseVotingPeriodDays === 'function' ? parseVotingPeriodDays(selectedGroup.constitution) : null;
-    const rule = `${pct}% of the other members have to agree` + (days ? `, within ${days} day${days === 1 ? '' : 's'}` : '') + '.';
+    const rule = `It takes ${pct}% of the group's votes` + (days ? `, within ${days} day${days === 1 ? '' : 's'}` : '') + '.';
+    // Same check the server makes: is Membership a delegable issue type here?
+    const delegable = typeof parseIssueTypes === 'function'
+        && parseIssueTypes(selectedGroup.constitution).some(t => t.toLowerCase() === 'membership');
+    const instant = delegable
+        ? ` Votes delegated on Membership count, and ${name} is removed the moment there are enough.`
+        : ` ${name} is removed the moment there are enough.`;
     body.innerHTML = `
         <h3>Propose removing ${name}</h3>
-        <p class="removal-explain">This starts a vote the whole group can see, ${name} included. ${rule} Your proposal counts as your vote.</p>
+        <p class="removal-explain">This starts a vote the whole group can see, ${name} included. ${rule}${instant} Your proposal counts as your vote.</p>
         <div class="form-group">
             <label for="removalReason">Why? (optional, shown to the group)</label>
             <textarea id="removalReason" rows="3" maxlength="280" placeholder="Keep it factual."></textarea>

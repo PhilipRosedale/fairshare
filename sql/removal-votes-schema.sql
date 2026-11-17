@@ -1,16 +1,23 @@
 -- Removing a member by group vote.
 --
--- Mirrors how people get in: nobody removes a member alone. Any active member
--- proposes it, the other active members vote, and the member is removed once
--- the votes reach the same share the group uses for admissions
--- ($NEW_MEMBER_PERCENTAGE, default 100%), within the same voting period
--- ($VOTING_PERIOD_DAYS, if the constitution sets one).
+-- Mirrors how people get in. Any active member proposes it, the other active
+-- members vote, and the member is removed as soon as the votes reach the same
+-- share the group uses for admissions ($NEW_MEMBER_PERCENTAGE, default 100%),
+-- within the same voting period ($VOTING_PERIOD_DAYS, if the constitution
+-- sets one).
+--
+-- Votes are counted with Membership delegations, exactly as endorsements are
+-- (sql/vote-delegation-schema.sql, which must be applied first): a voter
+-- carries their own vote plus every vote delegated to them on Membership. A
+-- delegate holding enough Membership votes therefore removes someone alone
+-- and immediately. The person being voted on never counts, directly or as a
+-- link in someone else's delegation chain.
 --
 -- One deliberate difference from admissions: after the voting period ends,
--- admissions count only the people who voted. For removals that would let a
--- single vote remove someone once everyone else stays quiet, so a removal
--- additionally needs at least a simple majority of the eligible members
--- (everyone active except the person being voted on) no matter what.
+-- admissions count only the votes cast. For removals that would let a single
+-- vote remove someone once everyone else stays quiet, so after the period a
+-- removal additionally needs a simple majority of the eligible votes
+-- (everyone active except the person being voted on).
 --
 -- Clients never write these tables directly; everything goes through the
 -- SECURITY DEFINER functions below. Run in Supabase SQL Editor.
@@ -63,8 +70,62 @@ begin
   end if;
 end $$;
 
+-- How many votes each direct voter carries on a removal: their own plus every
+-- member whose Membership delegation chain reaches them first. Same walk as
+-- delegated_vote_weights (sql/vote-delegation-schema.sql), except the person
+-- being voted on is left out entirely: their own vote never counts, and a
+-- chain that would pass through them stops there.
+-- p_issue_type null (the constitution has no Membership issue type) means no
+-- delegation: every voter weighs 1.
+create or replace function public.removal_vote_weights(
+  p_group_id uuid,
+  p_issue_type text,
+  p_voters uuid[],
+  p_target_id uuid
+)
+returns table (voter_id uuid, weight int) as $$
+  with recursive
+  active as (
+    select m.user_id
+    from public.members m
+    where m.group_id = p_group_id and m.status = 'active' and m.user_id <> p_target_id
+  ),
+  voters as (
+    select a.user_id from active a where a.user_id = any (coalesce(p_voters, '{}'::uuid[]))
+  ),
+  edges as (
+    select d.delegator_id, d.delegate_id
+    from public.vote_delegations d
+    join active a1 on a1.user_id = d.delegator_id
+    join active a2 on a2.user_id = d.delegate_id
+    where p_issue_type is not null
+      and d.group_id = p_group_id
+      and lower(d.issue_type) = lower(p_issue_type)
+  ),
+  walk (origin, cur, path) as (
+    select a.user_id, a.user_id, array[a.user_id] from active a
+    union all
+    select w.origin, e.delegate_id, w.path || e.delegate_id
+    from walk w
+    join edges e on e.delegator_id = w.cur
+    where not exists (select 1 from voters v where v.user_id = w.cur)
+      and not (e.delegate_id = any (w.path))
+  )
+  select w.cur, count(*)::int
+  from walk w
+  join voters v on v.user_id = w.cur
+  group by w.cur;
+$$ language sql stable security definer set search_path = public;
+
+revoke all on function public.removal_vote_weights(uuid, text, uuid[], uuid) from public, anon, authenticated;
+
 -- Where a proposal stands right now. Also resolves it (passed / expired) when
 -- the numbers say so, which is why every read path calls it first.
+--
+-- Votes are counted the way admissions count them: each direct voter carries
+-- the Membership votes delegated to them. The member is removed the moment the
+-- counted votes reach the threshold, so a delegate holding enough Membership
+-- votes removes someone on their own, immediately.
 create or replace function public.check_removal(p_proposal_id uuid)
 returns json as $$
 declare
@@ -75,11 +136,15 @@ declare
   v_period_days int;
   v_window_end timestamptz;
   v_eligible int;
+  v_voters uuid[];
+  v_direct int;
   v_votes int;
   v_threshold int;
   v_majority int;
+  v_issue text;
   v_target_name text;
   v_expired boolean := false;
+  v_closed int;
 begin
   select * into p from public.removal_proposals where id = p_proposal_id;
   if p is null then
@@ -93,9 +158,21 @@ begin
       v_pct := v_pct_match[1]::numeric / 100.0;
     end if;
   end if;
+  v_issue := public.resolve_issue_type(v_constitution, 'Membership');
   v_period_days := public.get_voting_period_days(v_constitution);
   if v_period_days is not null and v_period_days > 0 then
     v_window_end := p.created_at + (v_period_days || ' days')::interval;
+  end if;
+
+  -- The person left (or was removed) while the vote was open: nothing to decide.
+  if p.status = 'open' and not exists (
+    select 1 from public.members
+    where group_id = p.group_id and user_id = p.target_id and status = 'active'
+  ) then
+    update public.removal_proposals set status = 'expired', resolved_at = now()
+    where id = p.id and status = 'open';
+    return json_build_object('id', p.id, 'status', 'expired', 'votes', 0, 'direct_votes', 0,
+      'threshold', 0, 'eligible', 0, 'window_end', v_window_end);
   end if;
 
   -- Everyone active except the person being voted on.
@@ -103,15 +180,20 @@ begin
   from public.members
   where group_id = p.group_id and status = 'active' and user_id <> p.target_id;
 
-  select count(*) into v_votes
+  select array_agg(v.voter_id) into v_voters
   from public.removal_votes v
   join public.members m on m.group_id = p.group_id and m.user_id = v.voter_id and m.status = 'active'
-  where v.proposal_id = p.id;
+  where v.proposal_id = p.id and v.voter_id <> p.target_id;
+
+  v_direct := coalesce(cardinality(v_voters), 0);
+
+  select coalesce(sum(w.weight), 0) into v_votes
+  from public.removal_vote_weights(p.group_id, v_issue, v_voters, p.target_id) w;
 
   v_majority := floor(v_eligible / 2.0) + 1;
 
   if v_window_end is not null and now() >= v_window_end then
-    -- Period over: the admission rule (share of those who voted) with a
+    -- Period over: the admission rule (share of the votes cast) with a
     -- majority floor so silence cannot remove anyone.
     v_threshold := greatest(ceil(v_votes * v_pct), v_majority);
     v_expired := true;
@@ -120,26 +202,34 @@ begin
   end if;
 
   if p.status = 'open' and v_votes >= v_threshold then
-    update public.members set status = 'removed'
-    where group_id = p.group_id and user_id = p.target_id and status = 'active';
+    -- Close the proposal first. Removing the member clears their delegations,
+    -- which re-checks open removals in this group; closing first means that
+    -- nested check sees this one as already done.
+    update public.removal_proposals set status = 'passed', resolved_at = now()
+    where id = p.id and status = 'open';
+    get diagnostics v_closed = row_count;
 
-    update public.removal_proposals set status = 'passed', resolved_at = now() where id = p.id;
+    if v_closed > 0 then
+      update public.members set status = 'removed'
+      where group_id = p.group_id and user_id = p.target_id and status = 'active';
 
-    select display_name into v_target_name from public.profiles where id = p.target_id;
-    insert into public.group_events (group_id, event_type, summary, actor_id, metadata)
-    values (p.group_id, 'member_removed',
-      coalesce(v_target_name, 'A member') || ' was removed by group vote',
-      p.proposer_id,
-      json_build_object('user_id', p.target_id, 'proposal_id', p.id, 'votes', v_votes, 'threshold', v_threshold)::jsonb);
+      select display_name into v_target_name from public.profiles where id = p.target_id;
+      insert into public.group_events (group_id, event_type, summary, actor_id, metadata)
+      values (p.group_id, 'member_removed',
+        coalesce(v_target_name, 'A member') || ' was removed by group vote',
+        p.proposer_id,
+        json_build_object('user_id', p.target_id, 'proposal_id', p.id, 'votes', v_votes,
+          'direct_votes', v_direct, 'threshold', v_threshold)::jsonb);
 
-    begin
-      perform public.send_push_to_users(
-        array[p.target_id], p.proposer_id,
-        'Removed from ' || (select name from public.groups where id = p.group_id),
-        'The group voted to remove you.',
-        '/');
-    exception when others then null;
-    end;
+      begin
+        perform public.send_push_to_users(
+          array[p.target_id], p.proposer_id,
+          'Removed from ' || (select name from public.groups where id = p.group_id),
+          'The group voted to remove you.',
+          '/');
+      exception when others then null;
+      end;
+    end if;
 
     p.status := 'passed';
   elsif p.status = 'open' and v_expired then
@@ -151,6 +241,7 @@ begin
     'id', p.id,
     'status', p.status,
     'votes', v_votes,
+    'direct_votes', v_direct,
     'threshold', v_threshold,
     'eligible', v_eligible,
     'window_end', v_window_end
@@ -291,7 +382,7 @@ begin
         'proposer_id', r.proposer_id, 'proposer_name', r.proposer_name,
         'reason', r.reason, 'created_at', r.created_at,
         'i_voted', r.i_voted, 'i_proposed', r.proposer_id = v_me, 'is_me', r.target_id = v_me,
-        'votes', v_state->'votes', 'threshold', v_state->'threshold',
+        'votes', v_state->'votes', 'direct_votes', v_state->'direct_votes', 'threshold', v_state->'threshold',
         'eligible', v_state->'eligible', 'window_end', v_state->'window_end');
     end if;
   end loop;
@@ -299,8 +390,41 @@ begin
 end;
 $$ language plpgsql security definer set search_path = public;
 
-revoke all on function public.check_removal(uuid) from public, anon;
-grant execute on function public.check_removal(uuid) to authenticated;
+-- When a Membership delegation is made, changed or withdrawn, voting power has
+-- moved, so open removal votes in that group are counted again right away.
+-- (Admissions get the same treatment from reevaluate_delegated_issue.)
+create or replace function public.recheck_removals_on_delegation_change()
+returns trigger as $$
+declare
+  v_group uuid;
+  v_issue text;
+  v_id uuid;
+begin
+  if tg_op = 'DELETE' then
+    v_group := old.group_id; v_issue := old.issue_type;
+  else
+    v_group := new.group_id; v_issue := new.issue_type;
+  end if;
+  if lower(v_issue) = 'membership' then
+    for v_id in
+      select id from public.removal_proposals where group_id = v_group and status = 'open'
+    loop
+      perform public.check_removal(v_id);
+    end loop;
+  end if;
+  return null;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists recheck_removals_on_delegation_change on public.vote_delegations;
+create trigger recheck_removals_on_delegation_change
+  after insert or update or delete on public.vote_delegations
+  for each row execute function public.recheck_removals_on_delegation_change();
+
+
+-- check_removal is only reached through the functions below.
+revoke all on function public.check_removal(uuid) from public, anon, authenticated;
+revoke all on function public.recheck_removals_on_delegation_change() from public, anon, authenticated;
 grant execute on function public.propose_removal(uuid, uuid, text) to authenticated;
 grant execute on function public.vote_removal(uuid) to authenticated;
 grant execute on function public.unvote_removal(uuid) to authenticated;

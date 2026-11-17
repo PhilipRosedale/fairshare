@@ -98,6 +98,21 @@ async function handleGroupEvent(event) {
             if (activeTab === 'members') await renderMembersTab();
             break;
         }
+        case 'removal_proposed':
+        case 'removal_withdrawn': {
+            if (activeTab === 'members' && typeof loadRemovalVotes === 'function') await loadRemovalVotes();
+            break;
+        }
+        case 'member_removed': {
+            await loadMyGroups();
+            if (event.metadata?.user_id === currentUser?.id) {
+                // That was me. Back to the groups list; the group is gone from it.
+                if (typeof showGroupsList === 'function') showGroupsList();
+                break;
+            }
+            if (activeTab === 'members') await renderMembersTab();
+            break;
+        }
         case 'group_logo_changed': {
             const { data: updatedGroup } = await db.from('groups').select('*').eq('id', selectedGroup.id).single();
             if (updatedGroup) {

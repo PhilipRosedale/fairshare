@@ -88,7 +88,16 @@ async function loadMembersList() {
             </span>`
             : '';
         const delegationLine = renderMemberDelegationChips(m.user_id);
-        return `<div class="member-item${delegationLine ? ' member-item-has-deleg' : ''}">
+        // Everything the member sheet needs, so tapping a row costs no fetch.
+        membersLoaded[m.user_id] = {
+            userId: m.user_id, displayName, avatarUrl, isCreator, sponsor: sponsor || null,
+            joinedAt: m.joined_at, flow, isMe: m.user_id === currentUser?.id
+        };
+        // A div, not a button: the row holds the delegate and family tree
+        // buttons, which stop propagation so they do not open the sheet.
+        return `<div class="member-item member-item-btn${delegationLine ? ' member-item-has-deleg' : ''}" role="button" tabindex="0"
+            onclick="openMemberSheet('${m.user_id}')"
+            onkeydown="if (event.target === this && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openMemberSheet('${m.user_id}'); }">
             ${avatarHtml}
             <span class="member-name">${esc(displayName)}</span>
             ${sponsorLabel ? `<span class="member-sponsor">${sponsorLabel}</span>` : ''}
@@ -100,4 +109,75 @@ async function loadMembersList() {
         </div>${delegationLine}`;
     }).join('');
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+// Tap a member: a sheet with who they are and what you can do with them.
+// Group-level actions live here (removal today; roles, delegation later),
+// so the list itself stays just a list.
+let membersLoaded = {};
+
+async function openMemberSheet(userId) {
+    const m = membersLoaded[userId];
+    if (!m || !selectedGroup) return;
+    let sheet = document.getElementById('memberSheet');
+    if (!sheet) {
+        sheet = document.createElement('div');
+        sheet.id = 'memberSheet';
+        sheet.className = 'member-sheet hidden';
+        sheet.innerHTML = '<div class="member-sheet-scrim" onclick="closeMemberSheet()"></div><div class="member-sheet-panel" role="dialog" aria-modal="true"></div>';
+        document.body.appendChild(sheet);
+    }
+    const panel = sheet.querySelector('.member-sheet-panel');
+    const sym = esc(selectedGroup.currency_symbol || '');
+    const currencyOn = groupCurrencyEnabled(selectedGroup);
+    const joined = m.joinedAt ? new Date(m.joinedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : '';
+    const sub = m.isCreator ? 'Founder' : (m.sponsor ? `Sponsored by ${esc(m.sponsor)}` : 'Member');
+    const avatar = m.avatarUrl
+        ? `<img class="member-sheet-avatar" src="${esc(m.avatarUrl)}" alt="">`
+        : `<div class="member-sheet-avatar placeholder">${esc(m.displayName.charAt(0).toUpperCase())}</div>`;
+
+    panel.innerHTML = `
+        <div class="member-sheet-grab"></div>
+        <div class="member-sheet-head">
+            ${avatar}
+            <div class="member-sheet-who">
+                <div class="member-sheet-name">${esc(m.displayName)}${m.isMe ? ' <span class="member-sheet-you">you</span>' : ''}</div>
+                <div class="member-sheet-sub">${sub}${joined ? ` · joined ${esc(joined)}` : ''}</div>
+            </div>
+        </div>
+        ${currencyOn ? `<div class="member-sheet-stats">
+            <div><span class="k">Received</span><span class="v in">+${sym} ${m.flow.in.toFixed(2)}</span></div>
+            <div><span class="k">Sent</span><span class="v out">-${sym} ${m.flow.out.toFixed(2)}</span></div>
+            <div class="member-sheet-stats-note">last 30 days, within this group</div>
+        </div>` : ''}
+        <div class="member-sheet-actions" id="memberSheetActions"></div>`;
+    sheet.dataset.for = userId;
+    sheet.classList.remove('hidden');
+    requestAnimationFrame(() => sheet.classList.add('open'));
+
+    // Actions depend on whether they are in your contacts; find out quietly.
+    const actions = panel.querySelector('#memberSheetActions');
+    if (m.isMe) {
+        actions.innerHTML = `<button class="btn btn-secondary member-sheet-btn" onclick="closeMemberSheet(); leaveGroup('${selectedGroup.id}', ${JSON.stringify(selectedGroup.name || '')}, event)">Leave group</button>`;
+        return;
+    }
+    let isContact = false;
+    try {
+        const { data } = await db.from('contacts').select('contact_id').eq('user_id', currentUser.id).eq('contact_id', userId).maybeSingle();
+        isContact = !!data;
+    } catch (e) { /* treat as not a contact */ }
+    if (sheet.dataset.for !== userId && sheet.dataset.for) return; // user tapped someone else meanwhile
+    actions.innerHTML = `
+        ${isContact ? `
+            <button class="btn btn-primary member-sheet-btn" onclick="closeMemberSheet(); openDirectMessageScreen('${userId}')">Message</button>
+            <button class="btn btn-secondary member-sheet-btn" onclick="closeMemberSheet(); openContactDetailsById('${userId}')">View contact</button>`
+        : `<div class="member-sheet-hint">Not in your contacts. Meet in person to connect.</div>`}
+        <button class="btn btn-ghost member-sheet-btn member-sheet-danger" onclick="closeMemberSheet(); openProposeRemoval('${userId}', ${JSON.stringify(m.displayName).replace(/"/g, '&quot;')})">Propose removal from group</button>`;
+}
+
+function closeMemberSheet() {
+    const sheet = document.getElementById('memberSheet');
+    if (!sheet) return;
+    sheet.classList.remove('open');
+    setTimeout(() => sheet.classList.add('hidden'), 180);
 }

@@ -102,6 +102,7 @@ async function renderMembersTab() {
             <span id="memberCountDisplay" style="font-size:0.9rem;color:var(--dark-gray);">Loading…</span>
             <button class="btn btn-primary btn-small" onclick="startSponsorMeet()">+ Sponsor</button>
         </div>
+        <div id="removalVotesContent" class="hidden"></div>
         <div id="myDelegationsContent"></div>
         <h4 style="color:var(--accent-color);margin-bottom:0.5rem;">Members</h4>
         <div id="membersListContent"><p style="color:var(--dark-gray);">Loading…</p></div>
@@ -109,7 +110,7 @@ async function renderMembersTab() {
         <div id="candidatesContent"><p style="color:var(--dark-gray);">Loading…</p></div>
     `;
 
-    await Promise.all([loadMembersList(), loadCandidatesList()]);
+    await Promise.all([loadMembersList(), loadCandidatesList(), loadRemovalVotes()]);
 }
 
 async function renderGovernanceTab() {

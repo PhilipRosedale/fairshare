@@ -1035,10 +1035,27 @@ const handledAppLinks = new Set();
 // works once and expires in about an hour. On the app's first launch we read
 // the clipboard once (iOS asks "Allow Paste") and, if the link is there, sign
 // them straight in, so they skip the login screen.
-const APP_HANDOFF_CACHE_MS = 30 * 60 * 1000;
+// Links last about an hour on the server; reuse one for 45 minutes so the
+// clipboard copy and the Smart App Banner always carry the same, still-valid
+// link (minting a new one cancels the previous one).
+const APP_HANDOFF_CACHE_MS = 45 * 60 * 1000;
+const APP_HANDOFF_STORAGE_KEY = 'union_app_handoff';
 let appHandoffLink = null;
 let appHandoffFetchedAt = 0;
 let appHandoffInFlight = null;
+
+// Smart App Banner: when the app is installed the banner says "Open" and hands
+// the app this URL, so the same sign-in link logs them in from the banner too.
+function setSmartBannerHandoff(link) {
+    const meta = document.querySelector('meta[name="apple-itunes-app"]');
+    if (meta && link) meta.setAttribute('content', `app-id=6762217370, app-argument=${link}`);
+}
+
+function clearStoredAppHandoff() {
+    appHandoffLink = null;
+    appHandoffFetchedAt = 0;
+    try { localStorage.removeItem(APP_HANDOFF_STORAGE_KEY); } catch (_) { /* ignore */ }
+}
 
 // Web only: get a sign-in link ready ahead of the tap (the copy itself has to
 // happen inside the tap, so the link must already be here by then).
@@ -1047,6 +1064,17 @@ function prefetchAppHandoff() {
     if (appHandoffLink && (Date.now() - appHandoffFetchedAt) < APP_HANDOFF_CACHE_MS) {
         return Promise.resolve(appHandoffLink);
     }
+    // Reuse the link saved on this browser for this account, if still fresh.
+    try {
+        const saved = JSON.parse(localStorage.getItem(APP_HANDOFF_STORAGE_KEY) || 'null');
+        if (saved && saved.userId === currentUser.id && saved.link
+                && (Date.now() - saved.at) < APP_HANDOFF_CACHE_MS) {
+            appHandoffLink = saved.link;
+            appHandoffFetchedAt = saved.at;
+            setSmartBannerHandoff(appHandoffLink);
+            return Promise.resolve(appHandoffLink);
+        }
+    } catch (_) { /* ignore */ }
     if (appHandoffInFlight) return appHandoffInFlight;
     appHandoffInFlight = (async () => {
         try {
@@ -1062,6 +1090,12 @@ function prefetchAppHandoff() {
             if (!body?.token_hash) return null;
             appHandoffLink = `${PUBLIC_APP_ORIGIN}/?handoff=${encodeURIComponent(body.token_hash)}`;
             appHandoffFetchedAt = Date.now();
+            try {
+                localStorage.setItem(APP_HANDOFF_STORAGE_KEY, JSON.stringify({
+                    userId: currentUser.id, link: appHandoffLink, at: appHandoffFetchedAt,
+                }));
+            } catch (_) { /* ignore */ }
+            setSmartBannerHandoff(appHandoffLink);
             return appHandoffLink;
         } catch (e) {
             console.warn('[handoff] could not prepare app sign-in:', e);

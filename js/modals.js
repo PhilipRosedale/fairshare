@@ -234,6 +234,7 @@ function showModal(type) {
                 ${modalCloseX('cancelShareLocationDialog()')}
                 <h3>Share your location with ${esc(shareLocationContactName || 'contact')}</h3>
                 <p style="font-size:0.9rem;color:var(--dark-gray);margin-bottom:1rem;">How long do you want to share?</p>
+                ${IS_NATIVE && NATIVE_PLATFORM === 'android' ? `<p style="font-size:0.85rem;color:var(--dark-gray);margin-bottom:1rem;">Union collects location data to share your live location with this contact, even when the app is closed or not in use. Sharing stops when the time you pick runs out or you turn it off.</p>` : ''}
                 <div class="choice-list">
                     <div class="choice-item"><button type="button" class="btn btn-outline choice-button" onclick="shareLocationDurationChoice(${LOCATION_DURATIONS.HOUR_MS})">For an Hour</button></div>
                     <div class="choice-item"><button type="button" class="btn btn-outline choice-button" onclick="shareLocationDurationChoice(${LOCATION_DURATIONS.DAY_MS})">For a Day</button></div>

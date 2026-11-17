@@ -271,3 +271,39 @@ Review and declare permissions already in
 - `POST_NOTIFICATIONS` (Android 13+)
 
 Complete **Data safety** and content rating questionnaires before submitting.
+
+## Background location sharing
+
+Android matches the iOS "Find My-style" sharing: no continuous GPS and no
+foreground service notification. The code lives in
+`android/app/src/main/java/social/fairshare/union/`:
+
+- `BackgroundLocationPlugin.java` is the Capacitor bridge (`start`, `stop`,
+  `getStatus`, `getCurrentPosition`), the same JS surface as the iOS plugin.
+- `LocationSharingManager.java` holds all state in SharedPreferences, registers
+  low-power location updates (about every 5 minutes or 100 m) and a 150 m
+  geofence around the last fix, and uploads each fix to the `location-upload`
+  edge function with the grant the WebView hands it.
+- `LocationWakeReceiver.java` receives those wakes, plus boot and app update,
+  when Android drops the registrations and they need to be set up again.
+
+Differences from iOS worth knowing:
+
+- Android has no visit monitoring, so wakes come from the passive updates and
+  the geofence exit only.
+- Android throttles background location to a few updates an hour, so a moving
+  sharer can lag by several minutes.
+- Updates while the app is closed need **Allow all the time**. Android only
+  offers that as a second step after foreground access, and on Android 11+ it
+  sends the user to the app's Settings page. Without it, sharing still works
+  while the app is open.
+
+To test: share location with a contact, choose **Allow all the time**, swipe
+the app away, then move a few hundred meters (or change the emulator location).
+`adb logcat -s BackgroundLocation` shows each wake and upload. Release builds
+ignore mock locations, so use a debug build with the emulator.
+
+Play Console needs the **Location permissions** declaration (App content) for
+`ACCESS_BACKGROUND_LOCATION` before a build with this can be released,
+including a short video of the feature, and the Data safety form should say
+location is collected in the background.

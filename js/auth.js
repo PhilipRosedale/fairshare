@@ -543,6 +543,11 @@ async function showApp(navigateToGroupId) {
     document.getElementById('appScreen').classList.remove('hidden');
     document.getElementById('userDisplay').textContent = APP_NAME;
     setHeaderAvatar(currentProfile?.profile_image_url || null);
+    // iPhone/iPad web: get the app sign-in link ready early so it's there the
+    // moment they tap "Get the app" (the server can be slow to wake up).
+    if (!IS_NATIVE && typeof isIOSWeb === 'function' && isIOSWeb()) {
+        setTimeout(() => { prefetchAppHandoff(); }, 3000);
+    }
     initContactsSortPrefs();
 
     if (!navigateToGroupId) {
@@ -1081,8 +1086,7 @@ function isIOSWeb() {
 // we just open the App Store page in a new tab.
 function openAppStoreWithHandoff(event) {
     if (event) event.preventDefault();
-    const canCopy = Boolean(appHandoffLink && navigator.clipboard && navigator.clipboard.writeText);
-    if (!isIOSWeb() || !canCopy) {
+    if (!isIOSWeb() || !navigator.clipboard) {
         window.open(APP_STORE_URL, '_blank', 'noopener');
         return;
     }
@@ -1093,12 +1097,27 @@ function openAppStoreWithHandoff(event) {
         window.location.href = APP_STORE_URL;
     };
     try {
-        navigator.clipboard.writeText(appHandoffLink).then(goToStore, goToStore);
+        if (appHandoffLink && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(appHandoffLink).then(goToStore, goToStore);
+        } else if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+            // The link is still on its way (the server can take a few seconds
+            // to wake up). Safari lets us hand the clipboard a promise during
+            // the tap and fills it in when the link arrives. If it never
+            // arrives, the write fails and their clipboard is left alone.
+            const linkBlob = prefetchAppHandoff().then((link) => {
+                if (!link) throw new Error('no sign-in link');
+                return new Blob([link], { type: 'text/plain' });
+            });
+            navigator.clipboard.write([new ClipboardItem({ 'text/plain': linkBlob })]).then(goToStore, goToStore);
+        } else {
+            goToStore();
+            return;
+        }
     } catch (_) {
         goToStore();
         return;
     }
-    setTimeout(goToStore, 1500);
+    setTimeout(goToStore, 5000);
 }
 
 // App only, from a tap on "Continue from the web": same as the automatic

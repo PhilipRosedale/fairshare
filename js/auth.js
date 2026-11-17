@@ -33,6 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (platform === 'ios' || (platform === 'web' && isAppleDeviceWeb())) {
         document.body.classList.add('oauth-apple-on');
     }
+    // In the app, offer "Continue from the web" on the login screens.
+    if (platform !== 'web') {
+        document.getElementById('authHandoffBox')?.classList.remove('hidden');
+    }
 });
 
 // Web visitor on an iPhone, iPad or Mac: Sign in with Apple is the natural
@@ -1064,15 +1068,63 @@ function prefetchAppHandoff() {
     return appHandoffInFlight;
 }
 
+// iPhone / iPad in a browser (iPadOS reports itself as a Mac with touch).
+function isIOSWeb() {
+    const ua = navigator.userAgent || '';
+    return /iPhone|iPod|iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 // Web only, from a tap: copy the sign-in link (if ready) and open the App Store.
+// On iPhone/iPad we wait for the copy to finish before leaving the page:
+// switching to the App Store right away can cut the copy off, which left the
+// clipboard empty in testing. On computers there's no app to hand off to, so
+// we just open the App Store page in a new tab.
 function openAppStoreWithHandoff(event) {
     if (event) event.preventDefault();
+    const canCopy = Boolean(appHandoffLink && navigator.clipboard && navigator.clipboard.writeText);
+    if (!isIOSWeb() || !canCopy) {
+        window.open(APP_STORE_URL, '_blank', 'noopener');
+        return;
+    }
+    let left = false;
+    const goToStore = () => {
+        if (left) return;
+        left = true;
+        window.location.href = APP_STORE_URL;
+    };
     try {
-        if (appHandoffLink && navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(appHandoffLink).catch(() => {});
+        navigator.clipboard.writeText(appHandoffLink).then(goToStore, goToStore);
+    } catch (_) {
+        goToStore();
+        return;
+    }
+    setTimeout(goToStore, 1500);
+}
+
+// App only, from a tap on "Continue from the web": same as the automatic
+// first-launch check, but on demand and with feedback.
+async function continueFromWeb() {
+    const Clipboard = window.Capacitor?.Plugins?.Clipboard;
+    if (!Clipboard || typeof Clipboard.read !== 'function') return;
+    let text = '';
+    try {
+        text = (await Clipboard.read())?.value || '';
+    } catch (_) { /* nothing to paste, or paste not allowed */ }
+    const tokenHash = extractHandoffToken(text);
+    if (tokenHash) {
+        const ok = await signInWithHandoff(tokenHash);
+        try { await Clipboard.write({ string: '' }); } catch (_) { /* ignore */ }
+        if (!ok) {
+            showToast('That sign-in link has expired. Log in the same way you joined on the web.', 'error');
         }
-    } catch (_) { /* best effort; they can still log in normally */ }
-    window.open(APP_STORE_URL, '_blank', 'noopener');
+        return;
+    }
+    const meetToken = extractMeetToken(text);
+    if (meetToken) {
+        await useInviteToken(meetToken);
+        return;
+    }
+    showToast('Nothing to continue yet. On union42.net, tap Get the iPhone app, then come back here.', 'info');
 }
 
 function extractHandoffToken(text) {

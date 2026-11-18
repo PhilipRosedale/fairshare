@@ -5,6 +5,8 @@ let pendingMeetUsedById = null;
 let meetScanTimer = null;
 let meetStream = null;
 let meetChannel = null;
+let meetPollTimer = null;
+let meetConsumeBusy = false;
 let meetHandled = false; // prevent duplicate scans
 let currentMeetGroup = null; // { groupId, groupName, message } when sponsoring
 
@@ -151,53 +153,89 @@ async function openMeetScreen(options) {
     if (copyBtn) copyBtn.style.display = '';
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
 
-    // 6. Subscribe to Realtime on this meet_requests row and to new contact
-    // INSERTs for this user. used_by may be set at signup (token reservation)
-    // before complete_meet creates the contact row on first login.
+    // 6. Find out when the other person scans this code. Three signals, any
+    // of which is enough, because no single one is reliable on a phone:
+    //   a) Realtime UPDATE on this meet_requests row (used_by gets set)
+    //   b) Realtime change on this user's contacts (the contact row is
+    //      written by complete_meet; an existing contact is an UPDATE)
+    //   c) a short poll of the meet_requests row, which covers a dropped
+    //      socket or a scan that lands before the subscription is live
+    // used_by may be set at signup (token reservation) before complete_meet
+    // creates the contact row on first login, so we only show success once
+    // the contact row exists.
+    const meetRequestId = data.id;
+
     async function handleMeetRequestConsumed(usedById) {
-        if (meetHandled || !usedById) return;
-        const alreadyContact = meetContactsSnapshot.has(usedById);
-        const { data: row } = await db.from('contacts')
-            .select('contact_id')
-            .eq('user_id', currentUser.id)
-            .eq('contact_id', usedById)
-            .maybeSingle();
-        if (!row && !alreadyContact) {
-            pendingMeetUsedById = usedById;
-            return;
+        if (meetHandled || meetConsumeBusy || !usedById) return;
+        if (currentMeetRequestId !== meetRequestId) return;
+        meetConsumeBusy = true;
+        try {
+            const alreadyContact = meetContactsSnapshot.has(usedById);
+            const { data: row } = await db.from('contacts')
+                .select('contact_id')
+                .eq('user_id', currentUser.id)
+                .eq('contact_id', usedById)
+                .maybeSingle();
+            if (meetHandled || currentMeetRequestId !== meetRequestId) return;
+            if (!row && !alreadyContact) {
+                pendingMeetUsedById = usedById;
+                return;
+            }
+            meetHandled = true;
+            pendingMeetUsedById = null;
+            const { data: profile } = await db.from('profiles')
+                .select('display_name')
+                .eq('id', usedById)
+                .single();
+            const name = profile?.display_name || 'someone';
+            meetSuccess(name, usedById, alreadyContact);
+        } finally {
+            meetConsumeBusy = false;
         }
-        meetHandled = true;
-        pendingMeetUsedById = null;
-        const { data: profile } = await db.from('profiles')
-            .select('display_name')
-            .eq('id', usedById)
-            .single();
-        const name = profile?.display_name || 'someone';
-        meetSuccess(name, usedById, alreadyContact || !!row);
     }
 
-    meetChannel = db.channel('meet-request-' + currentMeetRequestId)
+    // Ask the database directly whether this code has been used yet.
+    async function checkMeetRequestUsed() {
+        if (meetHandled || currentMeetRequestId !== meetRequestId) return;
+        try {
+            const { data: req } = await db.from('meet_requests')
+                .select('used_by')
+                .eq('id', meetRequestId)
+                .maybeSingle();
+            if (req?.used_by) await handleMeetRequestConsumed(req.used_by);
+        } catch (e) {
+            console.warn('[meet] Could not check meet request:', e);
+        }
+    }
+
+    meetChannel = db.channel('meet-request-' + meetRequestId)
         .on('postgres_changes', {
             event: 'UPDATE',
             schema: 'public',
             table: 'meet_requests',
-            filter: 'id=eq.' + currentMeetRequestId
+            filter: 'id=eq.' + meetRequestId
         }, (payload) => {
             const usedById = payload.new?.used_by;
             if (usedById) void handleMeetRequestConsumed(usedById);
         })
         .on('postgres_changes', {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'contacts',
             filter: 'user_id=eq.' + currentUser.id
-        }, (payload) => {
-            const contactId = payload.new?.contact_id;
-            if (contactId && contactId === pendingMeetUsedById) {
-                void handleMeetRequestConsumed(contactId);
-            }
+        }, () => {
+            void checkMeetRequestUsed();
         })
-        .subscribe();
+        .subscribe((status) => {
+            // Catch a scan that happened while the socket was still connecting.
+            if (status === 'SUBSCRIBED') void checkMeetRequestUsed();
+        });
+
+    if (meetPollTimer) clearInterval(meetPollTimer);
+    meetPollTimer = setInterval(() => {
+        if (document.hidden) return;
+        void checkMeetRequestUsed();
+    }, 2000);
 
     // 7. Begin scanning loop if camera is active
     if (cameraOk) {
@@ -346,6 +384,13 @@ function closeMeetScreen() {
         cancelAnimationFrame(meetScanTimer);
         meetScanTimer = null;
     }
+
+    // Stop polling for the other person's scan
+    if (meetPollTimer) {
+        clearInterval(meetPollTimer);
+        meetPollTimer = null;
+    }
+    meetConsumeBusy = false;
 
     // Unsubscribe from Realtime
     if (meetChannel) {

@@ -293,6 +293,8 @@ Differences from iOS worth knowing:
   the geofence exit only.
 - Android throttles background location to a few updates an hour, so a moving
   sharer can lag by several minutes.
+- One-shot lookups (selfie location, distance labels) go through the plugin's
+  `getCurrentPosition`, the same as iOS, instead of the WebView's geolocation.
 - Updates while the app is closed need **Allow all the time**. Android only
   offers that as a second step after foreground access, and on Android 11+ it
   sends the user to the app's Settings page. Without it, sharing still works

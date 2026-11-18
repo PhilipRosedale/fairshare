@@ -88,7 +88,7 @@ final class LocationSharingManager {
 
     // Tuning values match the iOS plugin where the platforms allow it.
     /** Fixes older than this are cached replays, not live positions. */
-    private static final long ACCEPTED_FIX_MAX_AGE_MS = 120_000L;
+    private static final long ACCEPTED_FIX_MAX_AGE_MS = 60_000L;
     /** Minimum time between uploads unless the device moved MOVEMENT_UPLOAD_THRESHOLD_M. */
     private static final long MINIMUM_UPLOAD_INTERVAL_MS = 60_000L;
     private static final float MOVEMENT_UPLOAD_THRESHOLD_M = 10f;
@@ -102,7 +102,8 @@ final class LocationSharingManager {
     private static final long PASSIVE_INTERVAL_MS = 5 * 60_000L;
     private static final long PASSIVE_FASTEST_INTERVAL_MS = 60_000L;
     private static final float PASSIVE_MIN_DISTANCE_M = 100f;
-    private static final long ONE_SHOT_FIX_TIMEOUT_MS = 15_000L;
+    private static final long ONE_SHOT_FIX_TIMEOUT_MS = 12_000L;
+    private static final long UPLOAD_RETRY_DELAY_MS = 15_000L;
     /** A broadcast wake must finish well inside the system's receiver limit. */
     private static final long WAKE_WINDOW_MS = 25_000L;
     private static final int HTTP_TIMEOUT_MS = 10_000;
@@ -131,6 +132,7 @@ final class LocationSharingManager {
     private volatile Location lastPosition;
     private long lastFixRequestAt;
     private boolean passiveUpdatesActive;
+    private final AtomicBoolean uploadRetryScheduled = new AtomicBoolean(false);
 
     private LocationSharingManager(Context appContext) {
         context = appContext;
@@ -495,7 +497,18 @@ final class LocationSharingManager {
         });
     }
 
-    /** A fix that failed to upload is kept and retried on the next wake or app open. */
+    /**
+     * A fix that failed to upload is retried after a short delay, like iOS. If
+     * the process is gone by then, it is retried on the next wake or app open.
+     */
+    private void scheduleUploadRetry() {
+        if (!uploadRetryScheduled.compareAndSet(false, true)) return;
+        mainHandler.postDelayed(() -> {
+            uploadRetryScheduled.set(false);
+            retryPendingUpload();
+        }, UPLOAD_RETRY_DELAY_MS);
+    }
+
     private void retryPendingUpload() {
         if (!isEnabled() || !prefs.getBoolean(KEY_PENDING_SET, false)) return;
         enqueueUpload(
@@ -586,6 +599,7 @@ final class LocationSharingManager {
                 .putLong(KEY_PENDING_TIME, fixTimeMs)
                 .apply();
             Log.w(TAG, "location upload failed status=" + status + " error=" + errorSnippet);
+            scheduleUploadRetry();
         }
     }
 

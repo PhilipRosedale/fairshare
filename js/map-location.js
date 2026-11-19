@@ -187,6 +187,26 @@ function openMapPicker() {
     setTimeout(function () { map.invalidateSize(); }, APP_TIMING.MAP_INVALIDATE_SHORT_MS);
 }
 
+/**
+ * A shared location means "somewhere in this circle", not the exact pin. Move the
+ * point we send to a random spot 20% to 90% of the radius away, so the real pin is
+ * still inside the circle but never at its center. Without this, the center of the
+ * circle (and the Maps link) gives the exact spot away.
+ */
+function blurLocationWithinRadius(lat, lng, radius) {
+    const r = Math.max(0, Number(radius) || 0);
+    const distance = r * (0.2 + 0.7 * Math.random());
+    const bearing = Math.random() * 2 * Math.PI;
+    const metersPerDegree = 111320;
+    const cosLat = Math.max(0.01, Math.cos(lat * Math.PI / 180));
+    const newLat = lat + (distance * Math.cos(bearing)) / metersPerDegree;
+    const newLng = lng + (distance * Math.sin(bearing)) / (metersPerDegree * cosLat);
+    return {
+        lat: Math.max(-90, Math.min(90, newLat)),
+        lng: ((newLng + 540) % 360) - 180
+    };
+}
+
 async function sendLocationMessage(lat, lng, radius) {
     if (!selectedGroup || !currentUser) return;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -197,7 +217,8 @@ async function sendLocationMessage(lat, lng, radius) {
         showToast('Invalid location. Please pick a valid point on the map.', 'error');
         return;
     }
-    const body = `📍location:${lat.toFixed(6)},${lng.toFixed(6)},${Math.round(radius)}`;
+    const shared = blurLocationWithinRadius(lat, lng, radius);
+    const body = `📍location:${shared.lat.toFixed(5)},${shared.lng.toFixed(5)},${Math.round(radius)}`;
 
     const { data: msg, error } = await db.from('chat_messages').insert({
         group_id: selectedGroup.id,

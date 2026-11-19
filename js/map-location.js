@@ -282,6 +282,17 @@ function renderLocationPreview(container, lat, lng, radius) {
         const circleBounds = L.latLng(lat, lng).toBounds(radius * 2.5);
         previewMap.fitBounds(circleBounds);
 
-        setTimeout(function () { previewMap.invalidateSize(); }, APP_TIMING.MAP_INVALIDATE_MEDIUM_MS);
+        // The bubble is often built before it is on screen (a message arriving on
+        // another tab, or chat history loading). Leaflet then measures an empty box
+        // and zooms out to the whole world, so fit again once the box has a real size.
+        function fitPreview() {
+            if (!el.isConnected || !el.offsetWidth || !el.offsetHeight) return;
+            previewMap.invalidateSize();
+            previewMap.fitBounds(circleBounds, { animate: false });
+        }
+        setTimeout(fitPreview, APP_TIMING.MAP_INVALIDATE_MEDIUM_MS);
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(fitPreview).observe(el);
+        }
     });
 }

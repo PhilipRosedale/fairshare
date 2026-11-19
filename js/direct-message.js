@@ -330,7 +330,8 @@ async function sendDirectLocationMessage(lat, lng, radius) {
         showToast('Invalid location. Please pick a valid point on the map.', 'error');
         return;
     }
-    const body = `📍location:${lat.toFixed(6)},${lng.toFixed(6)},${Math.round(radius)}`;
+    const shared = blurLocationWithinRadius(lat, lng, radius);
+    const body = `📍location:${shared.lat.toFixed(5)},${shared.lng.toFixed(5)},${Math.round(radius)}`;
     const { data: msg, error } = await db.from('direct_messages').insert({
         conversation_key: activeDirectMessageConversationKey,
         from_user_id: currentUser.id,

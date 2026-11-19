@@ -67,13 +67,21 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Handle incoming push notifications — skip if a window is focused (Realtime handles foreground)
+// Handle incoming push notifications. Chrome and Firefox skip the banner while the app
+// is open and visible (Realtime shows it in-app). Safari must always show one: it
+// cancels the push subscription after a few pushes that display nothing, and the
+// phone then stops getting notifications until the person turns them back on.
+const UA = self.navigator.userAgent || '';
+// Installed iOS web apps have no "Safari" in the user agent, so go by WebKit minus the others.
+const IS_SAFARI = /applewebkit/i.test(UA) && !/chrome|chromium|android|crios|fxios|edg/i.test(UA);
+
 self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
       const hasFocused = windowClients.some(c => c.visibilityState === 'visible');
-      if (hasFocused) return;
+      if (hasFocused && !IS_SAFARI) return;
       return self.registration.showNotification(data.title || APP_NAME, {
         body: data.body || '',
         icon: './icon-192.png',

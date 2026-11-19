@@ -10,8 +10,13 @@ const APNS_TOPIC = Deno.env.get("APNS_TOPIC") || "social.fairshare.union";
 const APNS_HOST = Deno.env.get("APNS_HOST") || "https://api.push.apple.com";
 const APNS_JWT_REFRESH_SKEW_SECONDS = 60;
 const APNS_JWT_TTL_SECONDS = 3500;
+const APNS_SANDBOX_HOST = "https://api.sandbox.push.apple.com";
 const APNS_PRIORITY_IMMEDIATE = "10";
-const APNS_EXPIRATION_IMMEDIATE = "0";
+// How long Apple and Google hold a push for a phone that is asleep or offline.
+// With 0, Apple tried once and threw the push away if the phone didn't answer.
+const PUSH_TTL_SECONDS = 24 * 60 * 60;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const DEFAULT_PUSH_TITLE = "Union";
 const FCM_PROJECT_ID = Deno.env.get("FCM_PROJECT_ID") || "";
 const FCM_CLIENT_EMAIL = Deno.env.get("FCM_CLIENT_EMAIL") || "";
@@ -24,6 +29,62 @@ type DevicePushToken = {
   token: string;
   platform?: string;
 };
+
+// Thrown when Apple or Google says a token will never work again, so the
+// caller can remove it from device_push_tokens.
+class DeadTokenError extends Error {
+  token: string;
+  constructor(token: string, message: string) {
+    super(message);
+    this.token = token;
+  }
+}
+
+async function postToApns(host: string, token: string, jwt: string, payload: string) {
+  const resp = await fetch(`${host}/3/device/${token}`, {
+    method: "POST",
+    headers: {
+      authorization: `bearer ${jwt}`,
+      "apns-topic": APNS_TOPIC,
+      "apns-push-type": "alert",
+      "apns-priority": APNS_PRIORITY_IMMEDIATE,
+      "apns-expiration": String(Math.floor(Date.now() / 1000) + PUSH_TTL_SECONDS),
+    },
+    body: payload,
+  });
+  if (resp.ok) return { ok: true, status: resp.status, reason: "", text: "" };
+  const text = await resp.text();
+  let reason = "";
+  try {
+    reason = JSON.parse(text).reason || "";
+  } catch (_) { /* not JSON */ }
+  return { ok: false, status: resp.status, reason, text };
+}
+
+/** Remove tokens Apple or Google reported as permanently invalid. */
+async function pruneDeadTokens(tokens: string[]): Promise<number> {
+  if (tokens.length === 0 || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return 0;
+  const results = await Promise.allSettled(
+    tokens.map(async (token) => {
+      const resp = await fetch(
+        `${SUPABASE_URL}/rest/v1/device_push_tokens?token=eq.${encodeURIComponent(token)}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        }
+      );
+      if (!resp.ok) throw new Error(`prune ${resp.status}: ${await resp.text()}`);
+    })
+  );
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) {
+    console.warn("pruneDeadTokens failures:", failed.map((r) => (r as PromiseRejectedResult).reason?.message));
+  }
+  return results.length - failed.length;
+}
 
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
   const lines = pem
@@ -166,24 +227,19 @@ async function sendApnsPush(
 
   return Promise.allSettled(
     tokens.map(async (t) => {
-      const resp = await fetch(
-        `${APNS_HOST}/3/device/${t.token}`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `bearer ${jwt}`,
-            "apns-topic": APNS_TOPIC,
-            "apns-push-type": "alert",
-            "apns-priority": APNS_PRIORITY_IMMEDIATE,
-            "apns-expiration": APNS_EXPIRATION_IMMEDIATE,
-          },
-          body: payload,
-        }
-      );
-      if (!resp.ok) {
-        const err = await resp.text();
-        throw new Error(`APNs ${resp.status}: ${err}`);
+      let res = await postToApns(APNS_HOST, t.token, jwt, payload);
+      // Builds installed straight from Xcode get a sandbox token, which the
+      // production host rejects as BadDeviceToken. Try the sandbox host before
+      // giving up, so dev builds and TestFlight / App Store builds all get pushes.
+      if (!res.ok && res.status === 400 && res.reason === "BadDeviceToken" && APNS_HOST !== APNS_SANDBOX_HOST) {
+        res = await postToApns(APNS_SANDBOX_HOST, t.token, jwt, payload);
       }
+      if (res.ok) return;
+      const message = `APNs ${res.status}: ${res.text}`;
+      if (res.status === 410 || (res.status === 400 && res.reason === "BadDeviceToken")) {
+        throw new DeadTokenError(t.token, message);
+      }
+      throw new Error(message);
     })
   );
 }
@@ -233,6 +289,7 @@ async function sendFcmPush(
             },
             android: {
               priority: "HIGH",
+              ttl: `${PUSH_TTL_SECONDS}s`,
               notification: {
                 channel_id: FCM_CHANNEL_ID,
                 sound: "default",
@@ -242,7 +299,12 @@ async function sendFcmPush(
         }),
       });
       if (!resp.ok) {
-        throw new Error(`FCM ${resp.status}: ${await resp.text()}`);
+        const text = await resp.text();
+        const message = `FCM ${resp.status}: ${text}`;
+        if (resp.status === 404 || text.includes("UNREGISTERED")) {
+          throw new DeadTokenError(t.token, message);
+        }
+        throw new Error(message);
       }
     })
   );
@@ -278,12 +340,18 @@ serve(async (req) => {
       .filter((r) => r.status === "rejected")
       .map((r) => (r as PromiseRejectedResult).reason?.message || "unknown");
 
+    const deadTokens = results
+      .filter((r) => r.status === "rejected" && (r as PromiseRejectedResult).reason instanceof DeadTokenError)
+      .map((r) => ((r as PromiseRejectedResult).reason as DeadTokenError).token);
+    const pruned = await pruneDeadTokens(deadTokens);
+
     console.log(
       JSON.stringify({
         sent,
         total: tokens.length,
         apns: iosTokens.length,
         fcm: androidTokens.length,
+        pruned: pruned || undefined,
         failed: failed.length ? failed : undefined,
       })
     );
@@ -294,6 +362,7 @@ serve(async (req) => {
         total: tokens.length,
         apns: { total: iosTokens.length },
         fcm: { total: androidTokens.length },
+        pruned,
         failed,
       }),
       { headers: { "Content-Type": "application/json" } }

@@ -29,6 +29,20 @@ All pushes flow through the same plumbing.
   native-device Edge Function).
 - **Opt-in:** All pushes are gated by `profiles.push_notifications` for the
   recipient (NULL is treated as enabled).
+- **Dev and store builds both work:** iOS tokens are sent to Apple's production
+  host first. A build installed straight from Xcode has a sandbox token, which
+  production rejects as `BadDeviceToken`, so the function retries those on the
+  sandbox host.
+- **Held for 24 hours:** APNs, FCM and Web Push all keep a push for up to 24
+  hours if the phone is asleep or offline.
+- **Dead tokens clean themselves up:** when Apple, Google or a browser push
+  service says a token or subscription is gone for good, the Edge Function
+  deletes that row from `device_push_tokens` / `push_subscriptions`. Each call
+  logs `sent`, `total`, `pruned` and any `failed` reasons (Edge Function logs).
+- **Safari always shows a banner:** [sw.js](../sw.js) skips the banner in
+  Chrome and Firefox while the app is open and visible, but never in Safari or
+  an installed iOS web app, because Safari cancels the subscription after a few
+  pushes that show nothing.
 - **Tap routing:** Deep links are handled by `handleNotificationNavigation` in
   [js/push.js](../js/push.js). Service-worker fallback for Web Push
   is in [sw.js](../sw.js) (71–103).
@@ -312,6 +326,35 @@ When a contact sends a vouch whose type is marked `shared` in `attestation_types
 
 Non-shared vouch types do not notify the recipient (older clients still call the
 same RPC; behavior is determined server-side by the catalog).
+
+---
+
+## 12. Payment code scanned
+
+When someone scans a pay / request code, the person who was showing the code
+gets a push (Realtime covers the case where their app is open).
+
+| Field | Value |
+|-------|-------|
+| Trigger | Payment-code redeem RPC in [sql/payment-codes-schema.sql](../sql/payment-codes-schema.sql), after the transfer |
+| Recipient | The code's creator |
+| Title | `"Union"` |
+| Body | `"{scanner} paid you {symbol}{amount}"` or `"{scanner} collected your {symbol}{amount}"`, plus `" for {memo}"` when there is one |
+| URL | `/?action=view_group&group={groupUuid}` |
+
+---
+
+## 13. Removed from a group by vote
+
+| Field | Value |
+|-------|-------|
+| Trigger | `check_removal` in [sql/removal-votes-schema.sql](../sql/removal-votes-schema.sql) when a removal vote passes |
+| Recipient | The removed member |
+| Title | `"Removed from {group name}"` |
+| Body | `"The group voted to remove you."` |
+| URL | `/` |
+
+The rest of the group gets the usual group activity push (section 1).
 
 ---
 

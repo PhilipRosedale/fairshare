@@ -178,13 +178,21 @@ function dispatchLocationSharesChanged() {
 }
 
 function canReclaimLocationShareOwnership() {
-    return IS_NATIVE && NATIVE_PLATFORM !== 'android';
+    return hasNativeBackgroundLocation();
 }
 
-// iOS uploads from the native plugin (passive wakes, no polling). Web and
-// Android have no native uploader yet, so they poll while the app is open.
+// The iOS and Android apps upload from the native BackgroundLocation plugin
+// (passive wakes, no polling). The web has no native uploader, so it polls
+// while the page is open. An Android build from before the plugin existed
+// falls back to polling too.
 function hasNativeBackgroundLocation() {
-    return IS_NATIVE && NATIVE_PLATFORM !== 'android';
+    if (!IS_NATIVE) return false;
+    if (NATIVE_PLATFORM !== 'android') return true;
+    try {
+        return !!(window.Capacitor.isPluginAvailable && window.Capacitor.isPluginAvailable('BackgroundLocation'));
+    } catch (_) {
+        return false;
+    }
 }
 
 function checkAndStartLocationSharing() {
@@ -265,7 +273,7 @@ async function getNativeLocationSharingConfig() {
 }
 
 async function startNativeLocationSharing() {
-    if (!IS_NATIVE || NATIVE_PLATFORM === 'android') return;
+    if (!hasNativeBackgroundLocation()) return;
     try {
         const plugin = Capacitor.Plugins.BackgroundLocation;
         if (!plugin) {
@@ -295,7 +303,7 @@ async function startNativeLocationSharing() {
 }
 
 function refreshNativeLocationSharingAuth() {
-    if (!IS_NATIVE || !hasAnyActiveLocationShares()) return;
+    if (!hasNativeBackgroundLocation() || !hasAnyActiveLocationShares()) return;
     startNativeLocationSharing();
 }
 
@@ -360,13 +368,13 @@ async function logLocationSharingDiagnostics(context) {
     if (anyInstanceMismatch) {
         console.warn(prefix, label, 'source_instance_id does not match this device — uploads may be rejected by RLS.');
     }
-    // iOS only uploads after movement or app open, so an old row is expected there.
+    // The native apps only upload after movement or app open, so an old row is expected there.
     if (!hasNativeBackgroundLocation() && ownLocation?._ageMinutes != null &&
         ownLocation._ageMinutes >= 5 && hasAnyActiveLocationShares()) {
         console.warn(prefix, label, 'user_locations.updated_at is', ownLocation._ageMinutes, 'min old while sharing is active.');
     }
 
-    if (IS_NATIVE && NATIVE_PLATFORM !== 'android') {
+    if (hasNativeBackgroundLocation()) {
         try {
             const plugin = Capacitor.Plugins.BackgroundLocation;
             if (plugin && typeof plugin.getStatus === 'function') {
@@ -411,7 +419,9 @@ function maybeWarnNativeLocationSharingStatus(status) {
 
     let message = '';
     if (status.authorizationStatus && status.authorizationStatus !== 'authorizedAlways') {
-        message = 'Background sharing needs Location set to Always in iOS Settings.';
+        message = NATIVE_PLATFORM === 'android'
+            ? 'Background sharing needs Location set to "Allow all the time" in Android Settings.'
+            : 'Background sharing needs Location set to Always in iOS Settings.';
     } else if (status.allowsBackgroundLocationUpdates === false) {
         message = 'Background location is not active yet. Keep Union open briefly, then try again.';
     } else if (status.hasSupabaseConfig === false || status.hasUploadGrant === false) {
@@ -436,7 +446,7 @@ function stopLocationSharingUpdates() {
 
     // Always disable native background uploads when sharing stops. One-shot GPS
     // lookups can restart Core Location later without keeping uploads armed.
-    if (IS_NATIVE && NATIVE_PLATFORM !== 'android') {
+    if (hasNativeBackgroundLocation()) {
         try {
             const plugin = Capacitor.Plugins.BackgroundLocation;
             if (plugin) {

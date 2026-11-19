@@ -2035,7 +2035,7 @@ function getGPSLocation(options) {
     const maxAgeMs = (options && Number.isFinite(options.maxAgeMs))
         ? options.maxAgeMs
         : NATIVE_GPS_CACHE_MAX_AGE_MS;
-    if (IS_NATIVE && NATIVE_PLATFORM !== 'android') {
+    if (typeof hasNativeBackgroundLocation === 'function' && hasNativeBackgroundLocation()) {
         if (
             nativeLocationLastPosition &&
             (Date.now() - nativeLocationLastAt) < maxAgeMs

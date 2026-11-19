@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // App-local plugins must be registered before the bridge is created.
+        registerPlugin(BackgroundLocationPlugin.class);
         super.onCreate(savedInstanceState);
         scheduleInjectAndroidFcmFlag();
     }

@@ -393,6 +393,34 @@ final class LocationSharingManager {
         }
     }
 
+    /**
+     * A contact opened our details and wants to know where we are now, like
+     * Find My's on-demand locate. Takes one fix and uploads it even if the
+     * usual upload throttle would skip it. Entry point for
+     * {@link UnionMessagingService}; {@code done} is always called exactly once.
+     */
+    void handleRefreshRequest(Runnable done) {
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        final Runnable finish = () -> {
+            if (finished.compareAndSet(false, true)) done.run();
+        };
+        mainHandler.postDelayed(finish, WAKE_WINDOW_MS);
+
+        if (!isEnabled() || !hasConfig()) {
+            Log.i(TAG, "refresh request ignored: not sharing from this device");
+            finish.run();
+            return;
+        }
+        recordWake("refreshRequest");
+        requestFix("refreshRequest", true, location -> {
+            if (location != null) {
+                handleLocation(location, finish, true);
+            } else {
+                finish.run();
+            }
+        });
+    }
+
     /** Ask for a single fresh fix. Non-forced requests are rate limited. */
     @SuppressLint("MissingPermission")
     void requestFix(String reason, boolean force, FixCallback callback) {
@@ -430,6 +458,11 @@ final class LocationSharingManager {
      * and it is worth uploading. {@code done} may be null.
      */
     void handleLocation(Location location, Runnable done) {
+        handleLocation(location, done, false);
+    }
+
+    /** {@code forceUpload} skips the upload throttle (refresh requests). */
+    void handleLocation(Location location, Runnable done, boolean forceUpload) {
         if (!isAcceptable(location)) {
             if (done != null) done.run();
             return;
@@ -444,7 +477,7 @@ final class LocationSharingManager {
             return;
         }
         refreshGeofence(location);
-        if (!shouldUpload(location)) {
+        if (!forceUpload && !shouldUpload(location)) {
             if (done != null) done.run();
             return;
         }

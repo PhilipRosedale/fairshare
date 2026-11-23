@@ -357,6 +357,9 @@ async function hydrateContactDetailsScreen(contactId) {
     cdRenderShareSource(contactId);
     // Sharing-location pane (only rendered if they share with us).
     cdRenderSharingLocationPane(contactId);
+    // Like opening a person in Find My: if their position is stale, ask their
+    // phone for a fresh fix. The pane shows "Locating…" until it arrives.
+    requestContactLocationRefresh(contactId);
 
     // Selfies — reuse the existing loader/cache.
     loadContactSelfies(contactId).then((selfies) => {
@@ -984,7 +987,9 @@ function cdRenderSharingLocationPane(contactId) {
     const loc  = contactLocationsCache[contactId];
 
     const locKey = loc ? cdLocationKey(loc) : '';
-    const updatedText = loc?.updated_at ? 'Updated ' + formatLastSeen(loc.updated_at) : 'Waiting for location\u2026';
+    const locating = isContactLocationRefreshPending(contactId);
+    let updatedText = loc?.updated_at ? 'Updated ' + formatLastSeen(loc.updated_at) : 'Waiting for location\u2026';
+    if (locating && loc?.updated_at) updatedText += ' \u00b7 Locating\u2026';
 
     // The 60s inbound location poll re-fires `union:contactLocationsLoaded`
     // even when nothing about this contact's position has changed. Without

@@ -310,6 +310,31 @@ In-app: also inserts a `contact_notifications` row of type
 
 ---
 
+## 10a. Location refresh request (silent)
+
+Like opening a person in Find My. When you open Contact Details for someone who
+shares their location with you and their position is over a minute old, their
+phone is asked for a fresh fix. **Nothing is shown on their screen**: the push
+wakes the app in the background, it takes one fix, uploads it through the
+`location-upload` Edge Function, and goes back to sleep. You see "Updated 5m
+ago · Locating…" change to "Updated Just now" over Realtime.
+
+| Field | Value |
+|-------|-------|
+| Trigger | `requestContactLocationRefresh` in [js/location-sharing.js](../js/location-sharing.js), called from `hydrateContactDetailsScreen` in [js/contact-details.js](../js/contact-details.js), calls RPC `request_location_refresh(p_sharer_id)` |
+| Recipient | All of the sharer's `device_push_tokens` (only the device that owns the share uploads; others ignore it). Not gated on `profiles.push_notifications`, since it is silent |
+| Rate limit | One per sharer per minute (`location_refresh_requests`); skipped if the location is already under a minute old |
+| Payload | APNs: `apns-push-type: background`, priority 5, `{"aps":{"content-available":1},"type":"location_refresh"}`. FCM: data-only `{"type":"location_refresh"}`, high priority. Both expire after 60 s |
+| Handled by | iOS: `AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)` → `LocationSharingService.handleRefreshRequest` in [BackgroundLocationPlugin.swift](../ios/App/App/BackgroundLocationPlugin.swift). Android: [UnionMessagingService.java](../android/app/src/main/java/social/fairshare/union/UnionMessagingService.java) (replaces the Capacitor plugin's service) → `LocationSharingManager.handleRefreshRequest` |
+| Source | [sql/location-refresh-schema.sql](../sql/location-refresh-schema.sql); `kind: "location_refresh"` in [supabase/functions/send-push-apns/index.ts](../supabase/functions/send-push-apns/index.ts) |
+
+Limits: iOS does not deliver silent pushes to an app the user force-quit, and
+throttles them in Low Power Mode. A sharer using only the web app has no
+device token, so the RPC returns `no_device` and the viewer keeps the last
+known position.
+
+---
+
 ## 11. Shared vouch received
 
 When a contact sends a vouch whose type is marked `shared` in `attestation_types`

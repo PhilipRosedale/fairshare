@@ -9,7 +9,14 @@ const INBOUND_LOCATION_POLL_MS = APP_TIMING.INBOUND_LOCATION_POLL_MS;
 const EARTH_RADIUS_MI = 3958.8;
 const FEET_PER_MILE = 5280;
 const LOCATION_UPLOAD_FUNCTION_URL = SUPABASE_URL + '/functions/v1/location-upload';
+// On-demand refresh (Find My style): opening a sharer's details asks their
+// phone for a fresh fix when the one we have is older than this. Matches the
+// server's freshness check and rate limit in request_location_refresh.
+const LOCATION_REFRESH_STALE_MS = APP_TIMING.MINUTE_MS;
+// How long the viewer shows "Locating…" waiting for the sharer's phone to answer.
+const LOCATION_REFRESH_WAIT_MS = 30 * 1000;
 let contactLocationsCache = {}; // contact_id -> { lat, lng }
+const contactLocationRefreshRequests = {}; // contact_id -> { requestedAt, timer }
 let nativeLocationStatusWarningLastAt = 0;
 
 function getLocationSharingInstanceId() {
@@ -859,6 +866,63 @@ async function loadContactLocations() {
     } catch (e) {
         console.error('loadContactLocations error:', e);
     }
+}
+
+function dispatchContactLocationsLoaded() {
+    try {
+        window.dispatchEvent(new CustomEvent('union:contactLocationsLoaded'));
+    } catch (_) { /* best effort */ }
+}
+
+function isContactLocationStale(contactId) {
+    const updatedAt = contactLocationsCache[contactId]?.updated_at;
+    if (!updatedAt) return true;
+    return (Date.now() - new Date(updatedAt).getTime()) >= LOCATION_REFRESH_STALE_MS;
+}
+
+/**
+ * Ask a sharer's phone for a fresh fix, like opening a person in Find My. The
+ * server rate-limits and sends a silent push; the new position arrives through
+ * the normal Realtime / poll path. No-op if the location is already fresh.
+ */
+async function requestContactLocationRefresh(contactId) {
+    if (!currentUser || !contactId || !locationSharesInbound[contactId]) return;
+    if (!isContactLocationStale(contactId)) return;
+    if (isContactLocationRefreshPending(contactId)) return;
+
+    const entry = { requestedAt: Date.now(), timer: null };
+    contactLocationRefreshRequests[contactId] = entry;
+    entry.timer = setTimeout(() => {
+        if (contactLocationRefreshRequests[contactId] !== entry) return;
+        delete contactLocationRefreshRequests[contactId];
+        dispatchContactLocationsLoaded();
+    }, LOCATION_REFRESH_WAIT_MS);
+    dispatchContactLocationsLoaded();
+
+    try {
+        const { data, error } = await db.rpc('request_location_refresh', { p_sharer_id: contactId });
+        if (error) throw error;
+        console.log('[location-sharing] refresh request', contactId, data);
+        // 'throttled' means a refresh is already on the way, so keep waiting.
+        if (data === 'sent' || data === 'throttled') return;
+    } catch (e) {
+        console.warn('[location-sharing] refresh request failed:', e);
+    }
+    clearContactLocationRefresh(contactId);
+}
+
+function clearContactLocationRefresh(contactId) {
+    const entry = contactLocationRefreshRequests[contactId];
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    delete contactLocationRefreshRequests[contactId];
+    dispatchContactLocationsLoaded();
+}
+
+/** True while we are waiting for a sharer's phone to answer a refresh request. */
+// Once a fresh fix arrives the location is no longer stale, which ends the wait.
+function isContactLocationRefreshPending(contactId) {
+    return !!contactLocationRefreshRequests[contactId] && isContactLocationStale(contactId);
 }
 
 function renderContactLocationMap(contactId) {

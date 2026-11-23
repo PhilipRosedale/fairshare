@@ -601,11 +601,12 @@ async function submitSponsorShareInfoDialog() {
         const emailFirst = wantEmail && newlyShared.includes('email');
         const phoneUpdate = wantPhone && !phoneFirst && String(sharedPhone || '') !== String(prior?.shared_phone || '');
         const emailUpdate = wantEmail && !emailFirst && String(sharedEmail || '') !== String(prior?.shared_email || '');
+        const sponsorShareState = { phoneFirst, phoneUpdate, emailFirst, emailUpdate };
         const sponsorSharePushBody = buildInboundShareEmailPhonePushBody(
             currentProfile?.display_name || 'Someone',
-            { phoneFirst, phoneUpdate, emailFirst, emailUpdate }
+            sponsorShareState
         );
-        if (sponsorSharePushBody) sendInboundShareEmailPhonePush(cid, sponsorSharePushBody);
+        if (sponsorSharePushBody) sendInboundShareEmailPhonePush(cid, sponsorShareState);
 
         const row = (contactsLoadedRows || []).find(r => r.contact?.contact_id === cid);
         if (row) {

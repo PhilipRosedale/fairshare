@@ -115,15 +115,16 @@ function buildInboundShareEmailPhonePushBody(displayName, shareState) {
  * Push when someone first shares or updates email/phone with a specific contact.
  * In-app toasts for first share still come from `contact_shares` Realtime.
  */
-function sendInboundShareEmailPhonePush(toUserId, body) {
-    if (!currentUser?.id || !toUserId || !body) return;
-    const title = typeof APP_NAME !== 'undefined' ? APP_NAME : 'FairShare';
-    db.rpc('send_push_to_users', {
-        p_user_ids: [toUserId],
-        p_actor_id: currentUser.id,
-        p_title: title,
-        p_body: body,
-        p_url: '/?action=view_contact&contact=' + currentUser.id
+function sendInboundShareEmailPhonePush(toUserId, shareState) {
+    if (!currentUser?.id || !toUserId || !shareState) return;
+    // The server builds the sentence (same wording as
+    // buildInboundShareEmailPhonePushBody) and checks the share is real.
+    db.rpc('notify_contact_info_shared', {
+        p_contact_id: toUserId,
+        p_phone_first: !!shareState.phoneFirst,
+        p_phone_update: !!shareState.phoneUpdate,
+        p_email_first: !!shareState.emailFirst,
+        p_email_update: !!shareState.emailUpdate
     }).then(({ error: pErr }) => {
         if (pErr) console.warn('share email/phone push error:', pErr);
     });

@@ -104,11 +104,9 @@ async function shareLocationWithContact(contactId, duration) {
         }).then(({ error: nErr }) => {
             if (nErr) console.warn('location share notification error:', nErr);
         });
-        db.rpc('send_push_to_users', {
-            p_user_ids: [contactId],
-            p_actor_id: currentUser.id,
-            p_title: APP_NAME,
-            p_body: msg
+        // The server writes the push text and checks the share exists.
+        db.rpc('notify_location_share_started', {
+            p_contact_id: contactId
         }).then(({ error: pErr }) => {
             if (pErr) console.warn('location share push error:', pErr);
         });

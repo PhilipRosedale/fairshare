@@ -2181,11 +2181,12 @@ async function saveOutboundProfileShareForContact(contactId, wantPhone, wantEmai
         const emailFirst = wantEmail && newlyShared.includes('email');
         const phoneUpdate = wantPhone && !phoneFirst && String(phone || '') !== String(prevSharedPhone || '');
         const emailUpdate = wantEmail && !emailFirst && String(email || '') !== String(prevSharedEmail || '');
+        const shareState = { phoneFirst, phoneUpdate, emailFirst, emailUpdate };
         const sharePushBody = buildInboundShareEmailPhonePushBody(
             currentProfile?.display_name || 'Someone',
-            { phoneFirst, phoneUpdate, emailFirst, emailUpdate }
+            shareState
         );
-        if (sharePushBody) sendInboundShareEmailPhonePush(contactId, sharePushBody);
+        if (sharePushBody) sendInboundShareEmailPhonePush(contactId, shareState);
 
         const row = (contactsLoadedRows || []).find(r => r.contact?.contact_id === contactId);
         if (row) {

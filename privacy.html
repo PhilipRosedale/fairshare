@@ -30,24 +30,26 @@
 <body>
 <div class="container">
     <h1>Privacy Policy</h1>
-    <p class="subtitle">Union &mdash; Last updated May 1, 2026</p>
+    <p class="subtitle">Union &mdash; Last updated November 23, 2026</p>
 
     <h2>1. What Union Is</h2>
-    <p>Union is a social app that lets people manage their contacts, build trust, and form groups. It is available as a web app and as a native iOS app. This policy covers both.</p>
+    <p>Union is a social app that lets people manage their contacts, build trust, and form groups. It is available as a web app and as native iOS and Android apps. This policy covers all three.</p>
 
     <h2>2. Information We Collect</h2>
 
-    <p><strong>Account information.</strong> When you sign up we collect your email address, a display name you choose, and a password. Passwords are handled by our authentication provider and are never stored in plain text.</p>
+    <p><strong>Account information.</strong> When you sign up we collect your email address, a display name you choose, and a password. Passwords are handled by our authentication provider and are never stored in plain text. If you choose to sign in with Apple or Google instead, we receive your name and email address from that provider (Apple lets you hide your real email) and we never see your Apple or Google password.</p>
 
     <p><strong>Profile information.</strong> You may optionally add a phone number and a profile photo. You control whether your phone number or email is shared with individual contacts.</p>
 
     <p><strong>Photos.</strong> When you meet a new contact you may take a selfie together. Photos you upload (profile picture, contact selfies, group logos) are stored in cloud storage and may be visible to other Union users you interact with.</p>
 
-    <p><strong>Location.</strong> Union requests location access for two optional features: discovering nearby contacts and sharing a map pin in group chat. Your coordinates are stored temporarily on our server to check for nearby contacts and are not retained as a location history. Map pin locations you share in chat are visible to other members of that group.</p>
+    <p><strong>Location.</strong> Location access is optional and is used for three features you turn on yourself: being alerted when a contact is nearby, sharing a map pin in a group chat or direct message, and sharing your live location with a specific contact for a length of time you choose. For nearby alerts, your coordinates are stored temporarily on our server and are not retained as a location history. A map pin shared in chat is a point inside the privacy circle you pick, not your exact position, and is visible to the people in that chat. While you are sharing your live location with a contact, the iOS and Android apps can update your position in the background, including when the app is closed, so that contact can see where you are. We keep only your most recent position, and background updates stop when you turn sharing off or the time you chose runs out.</p>
 
-    <p><strong>Messages.</strong> Text messages you send in group chat are stored on our server and visible to members of that group.</p>
+    <p><strong>Messages.</strong> Messages and photos you send in a group chat are stored on our server and visible to members of that group. Direct messages are stored on our server and visible to you and the person you sent them to.</p>
 
-    <p><strong>Push notification tokens.</strong> If you enable push notifications, we store the device token needed to deliver notifications to your device. On the web this is a Web Push subscription; on iOS this is an APNs device token.</p>
+    <p><strong>Group activity.</strong> We store what you do inside your groups so the group can function: your membership, your balance and transfers of the group's credits, your votes, and any vote delegations you set. Group credits are in-app points with no cash value. A vote delegation is visible only to you.</p>
+
+    <p><strong>Push notification tokens.</strong> If you enable push notifications, we store the device token needed to deliver notifications to your device. On the web this is a Web Push subscription; on iOS this is an APNs device token; on Android this is a Firebase Cloud Messaging token.</p>
 
     <p><strong>Usage data.</strong> We do not use any third-party analytics or advertising SDKs. We do not track you across other apps or websites.</p>
 
@@ -56,7 +58,8 @@
         <li>To create and maintain your account</li>
         <li>To connect you with other Union users you choose to interact with</li>
         <li>To deliver push notifications you have opted into</li>
-        <li>To show nearby contacts when you enable location features</li>
+        <li>To show nearby contacts and share your location with the contacts you choose, when you enable location features</li>
+        <li>To run your groups: balances, votes, and membership</li>
         <li>To display your profile to other users within the app</li>
     </ul>
 
@@ -65,7 +68,10 @@
     <ul>
         <li><strong>Supabase</strong> &mdash; authentication, database, file storage, and serverless functions</li>
         <li><strong>Carto / OpenStreetMap</strong> &mdash; map tiles and reverse geocoding for location features</li>
+        <li><strong>Apple and Google sign-in</strong> &mdash; only if you choose to sign in that way</li>
         <li><strong>Apple Push Notification service (APNs)</strong> &mdash; push delivery on iOS</li>
+        <li><strong>Firebase Cloud Messaging (Google)</strong> &mdash; push delivery on Android</li>
+        <li><strong>Resend</strong> &mdash; delivery of email notifications</li>
         <li><strong>Web Push (browser vendor infrastructure)</strong> &mdash; push delivery on the web</li>
     </ul>
     <p>We do not sell, rent, or share your personal data with advertisers or data brokers.</p>
@@ -76,6 +82,9 @@
         <li>Your display name and profile photo are visible to other Union users</li>
         <li>Your phone number and email are shared only with contacts you explicitly choose to share them with</li>
         <li>Messages and locations you share in a group chat are visible to all members of that group</li>
+        <li>Direct messages are visible to you and the person you are messaging</li>
+        <li>Your live location is visible only to the contacts you have chosen to share it with, for as long as you share it</li>
+        <li>Your membership, votes on proposals, and transfers of group credits are visible to other members of that group</li>
         <li>Photos taken during a contact handshake are visible to both parties</li>
     </ul>
 
@@ -83,7 +92,7 @@
     <p>Union has zero tolerance for objectionable content or abusive users. Every user can report objectionable content and block other users from inside the app. Reports are reviewed and acted on within 24 hours. Users who post objectionable content or behave abusively will be removed and may have their accounts terminated.</p>
 
     <h2>7. Data Retention and Deletion</h2>
-    <p>Your data is retained as long as your account is active. Location data used for the nearby feature is short-lived and overwritten on each update.</p>
+    <p>Your data is retained as long as your account is active. Location data is short-lived: we keep only your most recent position, and it is overwritten on each update.</p>
     <p>You can delete your account and all associated data at any time from inside the app: open <strong>Profile &rarr; Delete Account</strong>. Deletion is permanent and cannot be undone. You can also email us at the address below if you prefer to request deletion that way.</p>
 
     <h2>8. Security</h2>

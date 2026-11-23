@@ -12,9 +12,17 @@ const APNS_JWT_REFRESH_SKEW_SECONDS = 60;
 const APNS_JWT_TTL_SECONDS = 3500;
 const APNS_SANDBOX_HOST = "https://api.sandbox.push.apple.com";
 const APNS_PRIORITY_IMMEDIATE = "10";
+// Apple requires priority 5 for background (content-available only) pushes.
+const APNS_PRIORITY_BACKGROUND = "5";
 // How long Apple and Google hold a push for a phone that is asleep or offline.
 // With 0, Apple tried once and threw the push away if the phone didn't answer.
 const PUSH_TTL_SECONDS = 24 * 60 * 60;
+// A location refresh only matters while someone is looking at the contact, so
+// it is dropped if the phone can't be reached quickly.
+const LOCATION_REFRESH_TTL_SECONDS = 60;
+// `kind` in the request body. A location refresh is a silent push that wakes
+// the sharer's app to upload one fresh fix; it shows nothing on their screen.
+const KIND_LOCATION_REFRESH = "location_refresh";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const DEFAULT_PUSH_TITLE = "Union";
@@ -40,15 +48,16 @@ class DeadTokenError extends Error {
   }
 }
 
-async function postToApns(host: string, token: string, jwt: string, payload: string) {
+async function postToApns(host: string, token: string, jwt: string, payload: string, silent: boolean) {
+  const ttl = silent ? LOCATION_REFRESH_TTL_SECONDS : PUSH_TTL_SECONDS;
   const resp = await fetch(`${host}/3/device/${token}`, {
     method: "POST",
     headers: {
       authorization: `bearer ${jwt}`,
       "apns-topic": APNS_TOPIC,
-      "apns-push-type": "alert",
-      "apns-priority": APNS_PRIORITY_IMMEDIATE,
-      "apns-expiration": String(Math.floor(Date.now() / 1000) + PUSH_TTL_SECONDS),
+      "apns-push-type": silent ? "background" : "alert",
+      "apns-priority": silent ? APNS_PRIORITY_BACKGROUND : APNS_PRIORITY_IMMEDIATE,
+      "apns-expiration": String(Math.floor(Date.now() / 1000) + ttl),
     },
     body: payload,
   });
@@ -204,6 +213,7 @@ async function sendApnsPush(
   title: string,
   body: string,
   url: string,
+  kind: string,
 ): Promise<PromiseSettledResult<void>[]> {
   if (tokens.length === 0) return [];
 
@@ -216,23 +226,26 @@ async function sendApnsPush(
       reason: e,
     } as PromiseRejectedResult));
   }
-  const payload = JSON.stringify({
-    aps: {
-      alert: { title: title || DEFAULT_PUSH_TITLE, body: body || "" },
-      sound: "default",
-      "mutable-content": 1,
-    },
-    url: url || "/",
-  });
+  const silent = kind === KIND_LOCATION_REFRESH;
+  const payload = silent
+    ? JSON.stringify({ aps: { "content-available": 1 }, type: KIND_LOCATION_REFRESH })
+    : JSON.stringify({
+      aps: {
+        alert: { title: title || DEFAULT_PUSH_TITLE, body: body || "" },
+        sound: "default",
+        "mutable-content": 1,
+      },
+      url: url || "/",
+    });
 
   return Promise.allSettled(
     tokens.map(async (t) => {
-      let res = await postToApns(APNS_HOST, t.token, jwt, payload);
+      let res = await postToApns(APNS_HOST, t.token, jwt, payload, silent);
       // Builds installed straight from Xcode get a sandbox token, which the
       // production host rejects as BadDeviceToken. Try the sandbox host before
       // giving up, so dev builds and TestFlight / App Store builds all get pushes.
       if (!res.ok && res.status === 400 && res.reason === "BadDeviceToken" && APNS_HOST !== APNS_SANDBOX_HOST) {
-        res = await postToApns(APNS_SANDBOX_HOST, t.token, jwt, payload);
+        res = await postToApns(APNS_SANDBOX_HOST, t.token, jwt, payload, silent);
       }
       if (res.ok) return;
       const message = `APNs ${res.status}: ${res.text}`;
@@ -249,6 +262,7 @@ async function sendFcmPush(
   title: string,
   body: string,
   url: string,
+  kind: string,
 ): Promise<PromiseSettledResult<void>[]> {
   if (tokens.length === 0) return [];
   if (!FCM_PROJECT_ID) {
@@ -268,6 +282,32 @@ async function sendFcmPush(
     } as PromiseRejectedResult));
   }
   const endpoint = `https://fcm.googleapis.com/v1/projects/${FCM_PROJECT_ID}/messages:send`;
+  // A data-only message reaches UnionMessagingService even when the app is
+  // closed, and shows nothing unless the app posts a notification itself.
+  const buildMessage = (token: string) => kind === KIND_LOCATION_REFRESH
+    ? {
+      token,
+      data: { type: KIND_LOCATION_REFRESH },
+      android: { priority: "HIGH", ttl: `${LOCATION_REFRESH_TTL_SECONDS}s` },
+    }
+    : {
+      token,
+      notification: {
+        title: title || DEFAULT_PUSH_TITLE,
+        body: body || "",
+      },
+      data: {
+        url: url || "/",
+      },
+      android: {
+        priority: "HIGH",
+        ttl: `${PUSH_TTL_SECONDS}s`,
+        notification: {
+          channel_id: FCM_CHANNEL_ID,
+          sound: "default",
+        },
+      },
+    };
 
   return Promise.allSettled(
     tokens.map(async (t) => {
@@ -277,26 +317,7 @@ async function sendFcmPush(
           authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message: {
-            token: t.token,
-            notification: {
-              title: title || DEFAULT_PUSH_TITLE,
-              body: body || "",
-            },
-            data: {
-              url: url || "/",
-            },
-            android: {
-              priority: "HIGH",
-              ttl: `${PUSH_TTL_SECONDS}s`,
-              notification: {
-                channel_id: FCM_CHANNEL_ID,
-                sound: "default",
-              },
-            },
-          },
-        }),
+        body: JSON.stringify({ message: buildMessage(t.token) }),
       });
       if (!resp.ok) {
         const text = await resp.text();
@@ -318,7 +339,7 @@ serve(async (req) => {
   }
 
   try {
-    const { tokens, title, body, url } = await req.json();
+    const { tokens, title, body, url, kind } = await req.json();
 
     if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
       return new Response(JSON.stringify({ sent: 0 }), {
@@ -330,8 +351,8 @@ serve(async (req) => {
     const iosTokens = deviceTokens.filter((t) => t.platform !== "android");
     const androidTokens = deviceTokens.filter((t) => t.platform === "android");
     const [apnsResults, fcmResults] = await Promise.all([
-      sendApnsPush(iosTokens, title, body, url),
-      sendFcmPush(androidTokens, title, body, url),
+      sendApnsPush(iosTokens, title, body, url, kind || ""),
+      sendFcmPush(androidTokens, title, body, url, kind || ""),
     ]);
     const results = [...apnsResults, ...fcmResults];
 
@@ -347,6 +368,7 @@ serve(async (req) => {
 
     console.log(
       JSON.stringify({
+        kind: kind || undefined,
         sent,
         total: tokens.length,
         apns: iosTokens.length,

@@ -73,6 +73,14 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
     private var lastDidUpdateAt: Date?
     private var lastUploadedPosition: CLLocation?
     private var lastSuccessfulUploadAt: Date?
+    /// Completion handlers from silent `location_refresh` pushes, called once
+    /// the requested fix has uploaded (or the deadline passes).
+    private var refreshCompletions: [(UIBackgroundFetchResult) -> Void] = []
+    /// A viewer asked for a fresh position, so the next fix uploads even if
+    /// `shouldUploadLocation` would skip it (stationary, uploaded recently).
+    private var forceNextUpload = false
+    /// iOS gives a silent push about 30 s of background time.
+    private let refreshDeadline: TimeInterval = 25
 
     // Queue of pending one-shot getCurrentPosition calls waiting on a fresh fix.
     // Each entry pairs a call with the previous fix timestamp it considers
@@ -162,6 +170,42 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
         logLocationRuntimeState(context: "appLaunch")
     }
 
+    /// A contact opened our details and wants to know where we are now, like
+    /// Find My's on-demand locate. Takes one fix and uploads it regardless of
+    /// the usual upload throttle. Runs from a silent push, possibly right after
+    /// a background relaunch (`handleAppLaunch` has already restored state).
+    func handleRefreshRequest(completion: @escaping (UIBackgroundFetchResult) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completion(.noData)
+                return
+            }
+            self.ensureLocationManager()
+            guard self.locationUploadEnabled, self.supabaseConfig != nil else {
+                NSLog("[BackgroundLocation] refresh request ignored: not sharing from this device")
+                completion(.noData)
+                return
+            }
+            self.refreshCompletions.append(completion)
+            self.forceNextUpload = true
+            self.beginWakeWindow(reason: "refreshRequest")
+            self.requestFix(reason: "refreshRequest", force: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.refreshDeadline) { [weak self] in
+                guard let self = self, !self.refreshCompletions.isEmpty else { return }
+                NSLog("[BackgroundLocation] refresh request timed out")
+                self.forceNextUpload = false
+                self.finishRefreshRequests(.failed)
+            }
+        }
+    }
+
+    private func finishRefreshRequests(_ result: UIBackgroundFetchResult) {
+        guard !refreshCompletions.isEmpty else { return }
+        let completions = refreshCompletions
+        refreshCompletions = []
+        completions.forEach { $0(result) }
+    }
+
     // MARK: - Plugin methods
 
     func start(_ call: CAPPluginCall) {
@@ -209,6 +253,8 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
             self.pendingUploadLocation = nil
             self.uploadRetryWorkItem?.cancel()
             self.uploadRetryWorkItem = nil
+            self.forceNextUpload = false
+            self.finishRefreshRequests(.noData)
             self.disarmPassiveMonitoring()
             self.applyBackgroundUpdatesIfAuthorized()
             self.locationManager?.stopUpdatingLocation()
@@ -302,7 +348,9 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
         if age > acceptedFixMaxAge {
             NSLog("[BackgroundLocation] discarding stale cached fix age=\(String(format: "%.1f", age))s lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude)")
             if locationUploadEnabled || !pendingFreshCalls.isEmpty {
-                requestFix(reason: "staleCache", force: false)
+                // A pending refresh request has a deadline, so it skips the
+                // fix-request rate limit; the deadline bounds the retries.
+                requestFix(reason: "staleCache", force: forceNextUpload)
             }
             return
         }
@@ -320,7 +368,8 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
             if location.horizontalAccuracy > refineAccuracyThreshold {
                 requestFix(reason: "refine", force: false)
             }
-            if shouldUploadLocation(location) {
+            if forceNextUpload || shouldUploadLocation(location) {
+                forceNextUpload = false
                 NSLog("[BackgroundLocation] didUpdateLocations lat=\(location.coordinate.latitude) lng=\(location.coordinate.longitude) horizAcc=\(location.horizontalAccuracy)m age=\(String(format: "%.1f", age))s — uploading")
                 postLocationToSupabase(location)
             }
@@ -642,6 +691,7 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
         lastSuccessfulUploadAt = Date()
         startNextLocationUploadIfNeeded()
         if pendingUploadLocation == nil {
+            finishRefreshRequests(.newData)
             endWakeWindow()
         }
     }
@@ -655,6 +705,8 @@ final class LocationSharingService: NSObject, CLLocationManagerDelegate {
         setLocationUploadEnabled(false)
         disarmPassiveMonitoring()
         applyBackgroundUpdatesIfAuthorized()
+        forceNextUpload = false
+        finishRefreshRequests(.failed)
         endWakeWindow()
         NSLog("[BackgroundLocation] upload grant rejected; waiting for WebView to provide a fresh grant")
     }

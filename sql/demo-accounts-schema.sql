@@ -62,10 +62,15 @@ DECLARE
   v_visible boolean;
   v_count int;
   v_contact_count int;
+  v_password text;
 BEGIN
   IF v_caller_id IS NULL OR v_caller_id != v_admin_id THEN
     RAISE EXCEPTION 'Unauthorized: admin access required';
   END IF;
+
+  -- The password is kept in Vault, never in this repo (the repo is public).
+  SELECT decrypted_secret INTO v_password
+    FROM vault.decrypted_secrets WHERE name = 'demo_accounts_password' LIMIT 1;
 
   v_visible := public.get_demo_accounts_visible();
   SELECT count(*)::int INTO v_count FROM public.profiles WHERE is_demo_account = true;
@@ -80,7 +85,7 @@ BEGIN
     'visible', v_visible,
     'demo_count', v_count,
     'expected_count', 12,
-    'demo_password', 'DemoUnion2026!',
+    'demo_password', coalesce(v_password, '(not set: add demo_accounts_password in Vault)'),
     'auth_email_pattern', 'demo+*@fairshare.social',
     'your_id', v_caller_id,
     'philip_demo_contacts', v_contact_count
@@ -128,6 +133,16 @@ BEGIN
   SELECT id INTO v_user_id FROM auth.users WHERE lower(email) = lower(trim(p_email));
 
   IF v_user_id IS NOT NULL THEN
+    -- Re-seeding moves existing demo accounts onto the current password, so
+    -- changing the Vault secret and clicking Seed rotates all of them. Only
+    -- ever touches accounts already marked as demo accounts.
+    IF lower(trim(p_email)) LIKE 'demo+%@fairshare.social'
+       AND EXISTS (SELECT 1 FROM public.profiles WHERE id = v_user_id AND is_demo_account = true) THEN
+      UPDATE auth.users
+         SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
+             updated_at = now()
+       WHERE id = v_user_id;
+    END IF;
     RETURN v_user_id;
   END IF;
 
@@ -240,7 +255,7 @@ AS $$
 DECLARE
   v_admin_id uuid := 'a8253eea-e76a-46d1-a92d-6fe36911f038';
   v_owner_id uuid := auth.uid();
-  v_password text := 'DemoUnion2026!';
+  v_password text;
   v_your_contacts int := 0;
   v_demo jsonb;
   v_accounts jsonb := '[
@@ -285,6 +300,14 @@ DECLARE
 BEGIN
   IF v_owner_id IS NULL OR v_owner_id != v_admin_id THEN
     RAISE EXCEPTION 'Unauthorized: admin access required';
+  END IF;
+
+  -- The password is kept in Vault, never in this repo (the repo is public).
+  -- Supabase Dashboard > Project Settings > Vault > add `demo_accounts_password`.
+  SELECT decrypted_secret INTO v_password
+    FROM vault.decrypted_secrets WHERE name = 'demo_accounts_password' LIMIT 1;
+  IF v_password IS NULL OR length(v_password) < 12 THEN
+    RAISE EXCEPTION 'Add a demo_accounts_password secret (12+ characters) in Supabase Vault, then seed again';
   END IF;
 
   SELECT coalesce(pp.phone, '(555) 555-0001'), coalesce(pp.email, 'philip@highfidelity.io')
@@ -538,6 +561,10 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'refreshed', v_count);
 END;
 $$;
+
+-- Internal helpers: only the admin functions above may use them.
+REVOKE ALL ON FUNCTION public._demo_ensure_auth_user(text, text, text) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public._demo_ensure_contact_pair(uuid, uuid, timestamptz, timestamptz) FROM public, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_get_demo_accounts_status() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_set_demo_accounts_visible(boolean) TO authenticated;

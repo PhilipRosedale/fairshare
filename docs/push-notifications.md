@@ -365,3 +365,15 @@ same change. The Cursor rule
 [.cursor/rules/push-notifications-doc.mdc](../.cursor/rules/push-notifications-doc.mdc)
 flags the most common entry points (`send_push_to_*` calls in SQL, the push
 edge functions, and the relevant `js/` modules).
+
+## Who can send a push
+
+`send_push_to_users` and `send_push_to_group` are internal. Only other
+database functions and triggers call them; the app cannot
+(`sql/lock-internal-functions.sql` takes that access away, along with
+`send_email` and `notify_group_members`).
+
+When the app itself needs to tell someone something, add a small function
+that checks the caller is allowed and writes the message on the server, the
+way `notify_location_share_started` and `notify_contact_info_shared` do.
+Never pass push text in from the app.

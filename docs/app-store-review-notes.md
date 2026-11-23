@@ -8,8 +8,7 @@ Paste the relevant sections of this document into the **App Review Information �
 
 Sign-up in Union normally requires a sponsor's QR code (the app uses an invite-only "web of trust" model). To let App Review test the app end to end **without scanning a QR code**, please use the demo account below:
 
-- **Email:** _[fill in before submission]_
-- **Password:** _[fill in before submission]_
+- **Email / password:** entered in App Store Connect under **App Review Information → Sign-In Information**. Do not write them in this file: the repository is public.
 
 This account is already a member of two demo groups so the reviewer can immediately exercise contacts, chat, group currencies, and location features.
 
@@ -25,7 +24,8 @@ Union is a social app for building real-world trust. Members:
 1. Meet in person and exchange contact info via QR codes ("the meet flow").
 2. Vouch for each other.
 3. Form groups and run a small **internal social-credit ledger** ("group credits") to coordinate community activity.
-4. Optionally share their live map location with selected contacts.
+4. Vote on how their group runs (admitting and removing members, the group's rules), and optionally delegate their vote on a topic to another member.
+5. Optionally share their live map location with selected contacts.
 
 There is **no** real-money transfer, no purchasable digital good, and no cryptocurrency.
 
@@ -43,7 +43,18 @@ Each group can define its own internal token (often called credits, coins, or po
 
 There is **no** in-app purchase, no Stripe / PayPal / Apple Pay integration, no fiat on-ramp, no fiat off-ramp, no NFT/blockchain integration. Union does not require IAP because we never sell anything inside the app.
 
-(Schema labels like `payment_received` are internal event names; the user-facing UI exclusively uses words like "credits" and "send" — no real-money payment language.)
+### In-person "Pay" and "Request"
+
+Members can move group credits between each other in person by holding up a QR code: one person types an amount, the other scans it, and the credits move inside that group's ledger. The screens use the words **Pay** and **Request** and show a receipt-style summary, because that is the plainest way to describe who owes whom within the group's game. To be explicit:
+
+- The "amount" is always the group's own fictional token (e.g. "12 pints" in a pub group), never a currency of any country.
+- Nothing is charged to any card, bank, or Apple ID. There is no payment processor behind these screens.
+- Credits never leave the group, cannot be withdrawn, and have no cash value, exactly as above.
+- The QR code is just a one-time link into our own database (`?pay=TOKEN`); it is not a payment network QR.
+
+To try it: sign in with the demo account on two devices (or one device plus the web app at https://union42.net), tap the centre button, choose **Request**, type an amount; on the other device tap the centre button, choose **Pay**, and point the camera at the first screen. The first screen updates on its own when the credits move.
+
+(Schema labels like `payment_received` are internal event names.)
 
 ---
 
@@ -95,7 +106,25 @@ When the user toggles **Share My Location** off, or the chosen duration expires,
 
 ## Sign in with Apple — Guideline 4.8
 
-Union uses **email + password authentication only** (via Supabase Auth). It does **not** offer Google / Facebook / Apple SSO. Per Guideline 4.8, Sign in with Apple is required only when third-party SSO providers are offered, so it is not required here. We may add it in a future release.
+Union offers three ways to sign in:
+
+- **Sign in with Apple** (iOS app, and the website on Apple devices)
+- **Continue with Google** (iOS app, Android app, website)
+- **Email + password** (everywhere)
+
+Because Google sign-in is offered, Sign in with Apple is offered alongside it as an equivalent option on the same screen. Sign in with Apple uses Apple's native sheet; we request only name and email, and "Hide My Email" addresses work normally. All three methods create the same kind of Union account (via Supabase Auth) and all can be deleted from **Profile → Delete Account**.
+
+New members still need a sponsor's invite to join, whichever sign-in method they pick. The demo account uses email + password.
+
+---
+
+## New in 1.2
+
+- **Vote delegation.** In a group's Members list, a member can delegate their vote on a topic (for example Membership or Monetary Policy) to another member, and withdraw it at any time. Delegations are private: only the person who set one can see it. It is a group-governance feature and has nothing to do with money.
+- **Removing a member by vote.** Any member can propose removing someone from a group; the group votes and the proposal passes at the threshold the group set in its own rules. The person concerned sees the proposal. This is the group's own moderation tool and is separate from Report / Block, which are always available to every user.
+- **"Continue from the web".** Someone who joined on the website and then installs the app can be signed in without typing their password again. The website copies a one-time sign-in link to the clipboard just before opening the App Store; on first launch the app reads the clipboard once to look for that link (iOS shows its standard paste prompt). If the user declines, or there is no link, the normal sign-in screen is shown and nothing else is read. The link works once and expires within an hour.
+- **Shared locations in chat** now send a point inside the privacy circle the user chose, not the exact pin.
+- Push notification reliability fixes.
 
 ---
 
@@ -104,6 +133,7 @@ Union uses **email + password authentication only** (via Supabase Auth). It does
 - We do **not** use any third-party analytics or advertising SDKs.
 - We do **not** share data with advertisers, data brokers, or trackers.
 - We do **not** track users across other apps or websites.
+- Sign in with Apple and Google sign-in are used only to authenticate the user; we receive a name and email address and nothing else from either provider.
 - All transit is HTTPS / TLS via standard `URLSession` and the WebView; we do not implement custom cryptography (`ITSAppUsesNonExemptEncryption = false`).
 
 The app's privacy policy is linked from inside the app (Profile → Privacy Policy) and at https://union42.net/privacy.html.

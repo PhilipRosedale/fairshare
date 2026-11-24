@@ -474,8 +474,8 @@ async function logout() {
     }
     // Stop nearby location tracking
     stopNearbyTracking();
-    // Stop location sharing updates
-    stopLocationSharingUpdates();
+    // Stop location sharing updates (and the native uploader)
+    stopLocationSharingUpdates({ signingOut: true });
     unsubscribeFromLocationShares();
     stopContactLocationsRefresh();
     // Reset client state
@@ -621,7 +621,6 @@ async function showApp(navigateToGroupId) {
         }
         await checkPendingGroupInvitations();
         await checkPendingSuggestedPictures();
-        checkAndStartNearbyTracking();
         // Populate locationSharesOutbound/Inbound from the DB before deciding
         // whether to start the native location pipeline. Without this, a user
         // who has an existing outbound share from a prior session would never
@@ -630,6 +629,9 @@ async function showApp(navigateToGroupId) {
         // loadLocationShares() as a side effect).
         try { await loadLocationShares(); } catch (e) { console.warn('loadLocationShares at login failed:', e); }
         try { await claimUnownedLocationSharesForThisDevice(); } catch (e) { console.warn('claim location shares at login failed:', e); }
+        // After shares are loaded: nearby may start the native uploader, which
+        // must not run on this device while another device owns a share.
+        checkAndStartNearbyTracking();
         checkAndStartLocationSharing();
         subscribeToLocationShares();
         // Fetch current positions of anyone sharing with us and wire up the

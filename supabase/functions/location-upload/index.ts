@@ -96,17 +96,32 @@ function assertFiniteCoordinate(value: unknown, min: number, max: number, name: 
   return n;
 }
 
-async function hasActiveShareForInstance(userId: string, instanceId: string): Promise<boolean> {
+// A device may upload in the background when it owns one of the user's active
+// location shares, or, when the user is not sharing at all, when they have
+// "Notify if nearby" on for some contact (the nearby check runs in a trigger
+// on user_locations). While a share is active only the sharing device may
+// upload, so two phones never fight over the row.
+async function mayUploadFromInstance(userId: string, instanceId: string): Promise<boolean> {
   const nowIso = new Date().toISOString();
-  const { data, error } = await service
+  const { data: shares, error } = await service
     .from("location_shares")
-    .select("id")
+    .select("source_instance_id")
     .eq("from_user_id", userId)
-    .eq("source_instance_id", instanceId)
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-    .limit(1);
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
   if (error) throw error;
-  return Boolean(data && data.length > 0);
+  if (shares && shares.length > 0) {
+    const bound = shares.filter((s) => s.source_instance_id);
+    return bound.length === 0 || bound.some((s) => s.source_instance_id === instanceId);
+  }
+
+  const { data: nearby, error: nearbyError } = await service
+    .from("contacts")
+    .select("contact_id")
+    .eq("user_id", userId)
+    .eq("notify_nearby", true)
+    .limit(1);
+  if (nearbyError) throw nearbyError;
+  return Boolean(nearby && nearby.length > 0);
 }
 
 async function mintGrant(req: Request, body: Record<string, unknown>): Promise<Response> {
@@ -123,8 +138,8 @@ async function mintGrant(req: Request, body: Record<string, unknown>): Promise<R
 
   const instanceId = cleanText(body.instanceId, 128);
   if (!instanceId) return json({ error: "Missing instanceId" }, 400);
-  if (!(await hasActiveShareForInstance(user.id, instanceId))) {
-    return json({ error: "No active location share for this device" }, 403);
+  if (!(await mayUploadFromInstance(user.id, instanceId))) {
+    return json({ error: "No active location share or nearby alert for this device" }, 403);
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -151,8 +166,8 @@ async function uploadLocation(req: Request, body: Record<string, unknown>): Prom
 
   const payload = await verifyGrant(grant);
   if (!payload) return json({ error: "Invalid or expired upload grant" }, 401);
-  if (!(await hasActiveShareForInstance(payload.sub, payload.instance_id))) {
-    return json({ error: "No active location share for this device" }, 403);
+  if (!(await mayUploadFromInstance(payload.sub, payload.instance_id))) {
+    return json({ error: "No active location share or nearby alert for this device" }, 403);
   }
 
   const lat = assertFiniteCoordinate(body.lat, -90, 90, "lat");
@@ -169,6 +184,7 @@ async function uploadLocation(req: Request, body: Record<string, unknown>): Prom
       source_instance_id: payload.instance_id,
       source_platform: payload.source_platform || null,
       source_user_agent: payload.source_user_agent || null,
+      location_label: null,
     }, { onConflict: "user_id" });
 
   if (error) {

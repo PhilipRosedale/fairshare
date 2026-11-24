@@ -198,6 +198,23 @@ function navigateTo(view, arg) {
 
     updateBottomBarActive(view);
 
+    // Screen-change microanimation: a short fade-and-rise on the incoming
+    // screen (the bottom bar icon pops in updateBottomBarActive).
+    if (previousMainView !== view) {
+        // The group chat and DM screens pin their input bars with
+        // position:fixed, so they are left alone. The globe only fades:
+        // moving a WebGL canvas costs more than it adds.
+        const chatWillShow = view === 'groups' && selectedGroup && activeTab === 'chat';
+        const enterEl = {
+            contacts: contactsScreen,
+            groups: chatWillShow ? null : groupsContent,
+            profile: profileScreen,
+            contactDetails: contactDetailsScreen,
+            globe: globeScreen
+        }[view];
+        playEnterAnimation(enterEl, view === 'globe' ? 'screen-fade' : 'screen-enter');
+    }
+
     // Skip redundant contacts → contacts (e.g. showApp right after cold start when
     // activeMainView is already 'contacts') so we do not wipe resume keys from
     // the previous session before readContactDetailResumeContactId runs.
@@ -208,11 +225,15 @@ function navigateTo(view, arg) {
 }
 
 function updateBottomBarActive(view) {
+    // Contact Details is logically a child of the Contacts tab, so keep
+    // the Contacts button highlighted while it's open.
+    const target = (view === 'contactDetails' || view === 'directMessage') ? 'contacts' : view;
     document.querySelectorAll('.bottom-bar-btn[data-view]').forEach(btn => {
-        // Contact Details is logically a child of the Contacts tab, so keep
-        // the Contacts button highlighted while it's open.
-        const target = (view === 'contactDetails' || view === 'directMessage') ? 'contacts' : view;
-        btn.classList.toggle('active', btn.dataset.view === target);
+        const isTarget = btn.dataset.view === target;
+        const wasActive = btn.classList.contains('active');
+        btn.classList.toggle('active', isTarget);
+        // Pop the icon only when the highlight actually moves to this tab.
+        if (isTarget && !wasActive) playEnterAnimation(btn, 'tab-pop');
     });
 }
 

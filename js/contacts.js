@@ -578,6 +578,8 @@ function bindContactActionEvents(content) {
     content.dataset.contactActionBound = '1';
 }
 
+let _contactsCascadeStart = 0;
+
 function renderContactRows(rows) {
     const content = document.getElementById('contactsListContent');
     if (!content) return;
@@ -595,6 +597,12 @@ function renderContactRows(rows) {
     bindContactActionEvents(content);
     bindContactDragSort(content);
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+    // First time the list is actually on screen, the rows cascade in. Later
+    // renders (search, sort, refresh) fall outside the cascade and do nothing.
+    if (content.offsetParent !== null) {
+        if (!_contactsCascadeStart) _contactsCascadeStart = performance.now();
+        playListCascade(content, '.contact-row', _contactsCascadeStart);
+    }
 }
 
 function renderContactsForCurrentQuery() {

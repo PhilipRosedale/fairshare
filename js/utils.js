@@ -17,7 +17,103 @@ function showToast(message, type = 'info') {
     toast.className = `toast ${type}`;
     toast.textContent = message;
     document.body.appendChild(toast);
+    // Fade out over the last 200ms instead of vanishing.
+    setTimeout(() => toast.classList.add('toast-out'), Math.max(0, APP_TIMING.TOAST_MS - 200));
     setTimeout(() => toast.remove(), APP_TIMING.TOAST_MS);
+}
+
+// ---- Microanimations ---------------------------------------------------------
+// Small helpers behind the motion in styles.css ("MICROANIMATIONS"). They share
+// the easing of the Union fan so the whole app moves one way, and every one of
+// them is switched off there under prefers-reduced-motion.
+
+// Play a one-shot CSS animation class on an element. The class comes off again
+// once the animation is over so no transform lingers: a transformed ancestor
+// would re-anchor position:fixed children such as the chat input bar.
+function playEnterAnimation(el, className) {
+    if (!el) return;
+    clearTimeout(el._enterAnimTimer);
+    el.classList.remove(className);
+    void el.offsetWidth; // restart if it is already mid-animation
+    el.classList.add(className);
+    // Timed rather than on animationend: some of these animate the element's
+    // children, and nothing fires at all under prefers-reduced-motion.
+    el._enterAnimTimer = setTimeout(() => el.classList.remove(className), 500);
+}
+
+// Let the first rows of a list arrive one after another. `startedAt` is when
+// the cascade began (performance.now()); a list that re-renders mid-cascade
+// passes the same value and picks up where it was instead of starting over,
+// and once the cascade is over this does nothing.
+const LIST_CASCADE = { STEP_MS: 28, ROW_MS: 320, MAX_ROWS: 14 };
+function playListCascade(container, selector, startedAt) {
+    if (!container) return;
+    const elapsed = performance.now() - startedAt;
+    const rows = Array.from(container.querySelectorAll(selector)).slice(0, LIST_CASCADE.MAX_ROWS);
+    rows.forEach((row, i) => {
+        const delay = i * LIST_CASCADE.STEP_MS - elapsed;
+        if (delay + LIST_CASCADE.ROW_MS <= 0) return;
+        row.style.animationDelay = `${Math.round(delay)}ms`;
+        row.classList.add('cascade-in');
+        setTimeout(() => {
+            row.classList.remove('cascade-in');
+            row.style.animationDelay = '';
+        }, delay + LIST_CASCADE.ROW_MS + 60);
+    });
+}
+
+// Slide the white pill in the group tab bar to the active tab. The pill is the
+// bar's ::before, placed from two CSS variables measured here. If the bar can't
+// be measured (hidden), the class comes off and the active button draws its own
+// background as before.
+function updateTabThumb(animate) {
+    const bar = document.getElementById('tabBar');
+    if (!bar) return;
+    if (!bar._thumbObserver && typeof ResizeObserver === 'function') {
+        bar._thumbObserver = new ResizeObserver(() => updateTabThumb(false));
+        bar._thumbObserver.observe(bar);
+    }
+    const btn = bar.querySelector('.tab-btn.active');
+    if (!btn || !btn.offsetWidth) {
+        bar.classList.remove('has-thumb', 'thumb-animate');
+        return;
+    }
+    const hadThumb = bar.classList.contains('has-thumb');
+    bar.classList.toggle('thumb-animate', Boolean(animate && hadThumb));
+    bar.style.setProperty('--thumb-x', `${btn.offsetLeft}px`);
+    bar.style.setProperty('--thumb-w', `${btn.offsetWidth}px`);
+    bar.classList.add('has-thumb');
+}
+
+// Closing a dialog hides the real overlay at once (callers rely on that), so
+// the fade-out plays on a throwaway copy. Skipped when another dialog opens
+// straight away, so one dialog handing over to the next does not double up.
+function playModalCloseGhost(overlay) {
+    try {
+        if (!overlay || overlay.classList.contains('hidden')) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const ghost = overlay.cloneNode(true);
+        const fields = 'input, textarea, select';
+        const src = overlay.querySelectorAll(fields);
+        ghost.querySelectorAll(fields).forEach((el, i) => {
+            // cloneNode drops what was typed; names would join live radio groups.
+            if (src[i]) { el.value = src[i].value; el.checked = src[i].checked; }
+            el.removeAttribute('name');
+        });
+        ghost.removeAttribute('id');
+        ghost.querySelector('.modal')?.removeAttribute('id');
+        ghost.removeAttribute('onclick');
+        ghost.removeAttribute('onmousedown');
+        ghost.removeAttribute('ontouchstart');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.inert = true;
+        ghost.classList.add('modal-ghost');
+        setTimeout(() => {
+            if (!overlay.classList.contains('hidden')) return;
+            document.body.appendChild(ghost);
+            setTimeout(() => ghost.remove(), 200);
+        }, 0);
+    } catch (_) { /* purely cosmetic */ }
 }
 
 const INSTALL_HINT_SESSION_KEY = 'union_install_hint_dismissed';

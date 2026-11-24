@@ -200,6 +200,49 @@ function hasNativeBackgroundLocation() {
     }
 }
 
+// True when another device owns one of our active outbound shares. Only that
+// device may upload while sharing, so this one must not run its own uploader.
+function hasActiveLocationShareOnOtherDevice() {
+    const now = Date.now();
+    return Object.values(locationSharesOutbound || {}).some(s =>
+        !isLocationShareOwnedByThisDevice(s) &&
+        (s.expires_at === null || new Date(s.expires_at).getTime() > now)
+    );
+}
+
+// The native uploader runs for location sharing and for "Notify if nearby":
+// nearby alerts are checked on the server whenever user_locations changes,
+// so the phone has to keep uploading while the app is in the background.
+function wantsNativeBackgroundLocation() {
+    if (!currentUser || !hasNativeBackgroundLocation()) return false;
+    if (hasAnyActiveLocationShares()) return true;
+    return typeof hasAnyNearbyContacts === 'function' && hasAnyNearbyContacts() &&
+        !hasActiveLocationShareOnOtherDevice();
+}
+
+function stopNativeBackgroundLocation() {
+    if (!hasNativeBackgroundLocation()) return;
+    try {
+        const plugin = Capacitor.Plugins.BackgroundLocation;
+        if (plugin) {
+            plugin.stop().catch(err => console.warn('[location-sharing] plugin.stop rejected:', err));
+        }
+    } catch (e) {
+        console.warn('Native BackgroundLocation stop failed:', e);
+    }
+}
+
+// Starts or stops the native uploader to match current shares and nearby
+// preferences. Starting again is safe: it refreshes the upload grant.
+function syncNativeBackgroundLocation() {
+    if (!hasNativeBackgroundLocation()) return;
+    if (wantsNativeBackgroundLocation()) {
+        startNativeLocationSharing();
+    } else {
+        stopNativeBackgroundLocation();
+    }
+}
+
 function checkAndStartLocationSharing() {
     const active = hasAnyActiveLocationShares();
     const outboundIds = Object.keys(locationSharesOutbound || {});
@@ -308,7 +351,7 @@ async function startNativeLocationSharing() {
 }
 
 function refreshNativeLocationSharingAuth() {
-    if (!hasNativeBackgroundLocation() || !hasAnyActiveLocationShares()) return;
+    if (!wantsNativeBackgroundLocation()) return;
     startNativeLocationSharing();
 }
 
@@ -425,8 +468,8 @@ function maybeWarnNativeLocationSharingStatus(status) {
     let message = '';
     if (status.authorizationStatus && status.authorizationStatus !== 'authorizedAlways') {
         message = NATIVE_PLATFORM === 'android'
-            ? 'Background sharing needs Location set to "Allow all the time" in Android Settings.'
-            : 'Background sharing needs Location set to Always in iOS Settings.';
+            ? 'Background location needs Location set to "Allow all the time" in Android Settings.'
+            : 'Background location needs Location set to Always in iOS Settings.';
     } else if (status.allowsBackgroundLocationUpdates === false) {
         message = 'Background location is not active yet. Keep Union open briefly, then try again.';
     } else if (status.hasSupabaseConfig === false || status.hasUploadGrant === false) {
@@ -441,7 +484,9 @@ function maybeWarnNativeLocationSharingStatus(status) {
     }
 }
 
-function stopLocationSharingUpdates() {
+// Pass { signingOut: true } on sign-out so the native uploader stops even
+// though contact rows (and their nearby flags) may still be in memory.
+function stopLocationSharingUpdates(options = {}) {
     locationSharingActive = false;
     if (locationSharingInterval) {
         clearInterval(locationSharingInterval);
@@ -449,17 +494,11 @@ function stopLocationSharingUpdates() {
     }
     stopShareRemainingTimer();
 
-    // Always disable native background uploads when sharing stops. One-shot GPS
-    // lookups can restart Core Location later without keeping uploads armed.
-    if (hasNativeBackgroundLocation()) {
-        try {
-            const plugin = Capacitor.Plugins.BackgroundLocation;
-            if (plugin) {
-                plugin.stop().catch(err => console.warn('[location-sharing] plugin.stop rejected:', err));
-            }
-        } catch (e) {
-            console.warn('Native BackgroundLocation stop failed:', e);
-        }
+    // Disable native background uploads when sharing stops, unless "Notify if
+    // nearby" still needs them. One-shot GPS lookups can restart Core Location
+    // later without keeping uploads armed.
+    if (options.signingOut || !wantsNativeBackgroundLocation()) {
+        stopNativeBackgroundLocation();
     }
 }
 
@@ -492,6 +531,7 @@ async function sendSharingLocationUpdate(lat, lng) {
                 lat: lat,
                 lng: lng,
                 updated_at: new Date().toISOString(),
+                location_label: null,
                 ...getLocationSharingSourceMetadata()
             }, { onConflict: 'user_id' });
         if (error) {

@@ -56,6 +56,8 @@ ALTER TABLE public.contact_notifications
 ALTER TABLE public.contact_notifications
   ADD COLUMN IF NOT EXISTS location_label text;
 
+-- NOTE: superseded by sql/nearby-background.sql, which moves the nearby check
+--    into a trigger on user_locations so background uploads fire it too.
 -- 4. RPC: update caller's location and check for nearby mutual contacts.
 --    If a mutual-notify contact is within 1 mile and hasn't been notified in the
 --    last hour, sends an in-app notification + Web Push.

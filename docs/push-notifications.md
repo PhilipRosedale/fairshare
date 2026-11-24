@@ -273,21 +273,23 @@ In-app: writes `contact_notifications` rows of type `met_date_set` with
 ## 9. Contact is nearby
 
 When you and a mutual `notify_nearby` contact are within ~1 mile, **both**
-parties get a push. Cooldown ≥ 1 hour per pair; the contact's location must be
-fresh (≤ 10 minutes old).
+parties get a push. Cooldown ≥ 1 hour per pair. The other party's location
+must be fresh: ≤ 2 hours old if it came from the iOS/Android app (which
+re-uploads whenever it leaves a 150 m geofence), ≤ 10 minutes if from the web.
 
 | Field | Value |
 |-------|-------|
-| Trigger | RPC `update_location_and_check_nearby(...)` discovers a mutual nearby pair |
+| Trigger | Any write to `user_locations` (trigger `user_locations_check_nearby` → `_check_nearby_for_user`) that finds a mutual nearby pair |
 | Recipient | Both users — two pushes are sent, each with the other party as actor |
 | Title | `"Union"` |
 | Body | `"{other name} is nearby!"` |
 | URL | `/` (no deep link wired) |
-| Source | [sql/nearby-schema.sql](../sql/nearby-schema.sql) 124–197; client poller in [js/nearby.js](../js/nearby.js) |
+| Source | [sql/nearby-background.sql](../sql/nearby-background.sql); writers: foreground poller in [js/nearby.js](../js/nearby.js) (RPC `update_location_and_check_nearby`), native background uploads via [supabase/functions/location-upload](../supabase/functions/location-upload/index.ts) |
 
-Note: [js/nearby.js](../js/nearby.js) only calls the RPC while
-`document.visibilityState === 'visible'`, so detection runs when the user has
-the app foregrounded; recipients can still be backgrounded.
+Detection runs in the background: on iOS/Android, having "Notify if nearby"
+on for any contact keeps the native BackgroundLocation plugin uploading
+(see `wantsNativeBackgroundLocation` in [js/location-sharing.js](../js/location-sharing.js)).
+Web clients still only upload while the page is visible.
 
 ---
 

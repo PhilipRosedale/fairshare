@@ -84,10 +84,21 @@ async function sendLocationUpdate() {
     }
 }
 
+// The foreground poller only runs while the app is visible. On iOS/Android
+// the native BackgroundLocation plugin keeps uploading in the background, and
+// the server checks for nearby contacts on every upload (trigger on
+// user_locations), so alerts arrive without anyone opening the app.
 function checkAndStartNearbyTracking() {
     if (hasAnyNearbyContacts()) {
         startNearbyTracking();
+        if (typeof wantsNativeBackgroundLocation === 'function' && wantsNativeBackgroundLocation()) {
+            startNativeLocationSharing();
+        }
     } else {
         stopNearbyTracking();
+        // Stops the native uploader unless a location share still needs it.
+        if (typeof syncNativeBackgroundLocation === 'function') {
+            syncNativeBackgroundLocation();
+        }
     }
 }

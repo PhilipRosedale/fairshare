@@ -12,9 +12,11 @@ async function switchTab(tabName) {
         if (typeof resetChatLayoutStyles === 'function') resetChatLayoutStyles();
     }
     if (tabName === 'constitution') tabName = 'governance'; // legacy tab id
+    const previousTab = activeTab;
     activeTab = tabName;
     document.querySelectorAll('.tab-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.tab === tabName));
+    updateTabThumb(true);
 
     // Hide activity log on chat tab (chat IS the live activity)
     const actLog = document.getElementById('activityLog');
@@ -29,6 +31,7 @@ async function switchTab(tabName) {
         activeTab = tabName;
         document.querySelectorAll('.tab-btn').forEach(btn =>
             btn.classList.toggle('active', btn.dataset.tab === tabName));
+        updateTabThumb(true);
     }
 
     switch (tabName) {
@@ -39,6 +42,12 @@ async function switchTab(tabName) {
         case 'chat': await renderChatTab(); break;
     }
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+    // New tab content fades and rises in. Not chat: its input bar is
+    // position:fixed and would jump while the card is transformed. Skipped if
+    // the user has already moved on to another tab while this one loaded.
+    if (tabName !== previousTab && tabName !== 'chat' && activeTab === tabName) {
+        playEnterAnimation(document.getElementById('tabContent'), 'screen-enter');
+    }
 }
 
 async function renderMoneyTab() {

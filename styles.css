@@ -1353,16 +1353,15 @@ body {
     font-weight: 500;
     font-size: 0.9rem;
     z-index: 10000;
-    animation: slideIn 0.3s ease-out;
+    animation: toastIn .34s var(--pay-spring);
     max-width: 350px;
 }
+.toast.toast-out { animation: toastOut .2s var(--pay-in) forwards; }
 .toast.success { background: var(--green); }
 .toast.error { background: var(--red); }
 .toast.info { background: var(--primary-color); }
-@keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
+@keyframes toastIn  { from { transform: translateY(-14px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes toastOut { from { transform: none; opacity: 1; } to { transform: translateY(-8px); opacity: 0; } }
 
 /* Install hint floater */
 .install-hint-floater {
@@ -5717,10 +5716,52 @@ body.oauth-apple-on .btn-oauth-apple { display: flex; }
 .pay-grow .gb { font-weight: 700; font-size: 15px; white-space: nowrap; }
 .pay-grow .gb small { font-weight: 500; color: var(--pay-ink-2); font-size: 12px; margin-left: 3px; }
 
+/* =====================================================================
+   MICROANIMATIONS   (helpers in js/utils.js)
+   Same easing as the Union fan above, so the app moves one way.
+   ===================================================================== */
+
+/* Incoming screen, group view and group tab content: fade and rise */
+.screen-enter { animation: screenEnter .26s var(--pay-out); }
+.screen-fade  { animation: payFade .26s var(--pay-out); }
+@keyframes screenEnter { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Bottom bar: the icon you just switched to pops */
+.bottom-bar-btn.tab-pop .bottom-bar-lucide { animation: tabPop .42s var(--pay-spring); }
+.bottom-bar-btn.tab-pop .bottom-bar-label  { animation: tabLabelIn .26s var(--pay-out); }
+@keyframes tabPop     { from { transform: translateY(3px) scale(.72); } to { transform: none; } }
+@keyframes tabLabelIn { from { opacity: .35; } to { opacity: 1; } }
+
+/* Group tab bar: the white pill slides to the active tab (updateTabThumb) */
+.tab-bar { position: relative; }
+.tab-bar::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 0; width: var(--thumb-w, 0px);
+    transform: translateX(var(--thumb-x, 0px)); border-radius: 10px; background: var(--white);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12); opacity: 0; pointer-events: none; }
+.tab-bar.has-thumb::before { opacity: 1; }
+.tab-bar.thumb-animate::before { transition: transform .34s var(--pay-spring), width .34s var(--pay-out); }
+.tab-bar.has-thumb .tab-btn { position: relative; z-index: 1; }
+.tab-bar.has-thumb .tab-btn.active { background: none; box-shadow: none; }
+
+/* Dialogs: backdrop fades, card settles in; closing fades a copy (playModalCloseGhost) */
+.modal-overlay { animation: payFade .2s var(--pay-out); }
+.modal-overlay > .modal { animation: modalIn .3s var(--pay-spring); }
+.modal-overlay.modal-ghost { pointer-events: none; animation: payFadeOut .16s var(--pay-in) forwards; }
+.modal-overlay.modal-ghost > .modal { animation: modalOut .16s var(--pay-in) forwards; }
+@keyframes modalIn  { from { transform: translateY(12px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes modalOut { from { transform: none; } to { transform: translateY(6px) scale(.98); } }
+
+/* Lists: first rows arrive one after another (playListCascade sets the delay).
+   "backwards" only, so nothing is left overriding the row's own opacity. */
+.cascade-in { animation: screenEnter .32s var(--pay-out) backwards; }
+
 @media (prefers-reduced-motion: reduce) {
     .union-fan .ufi { animation: none; transform: translate(var(--tx), var(--ty)); opacity: 1; }
     .union-fan.closing .ufi { animation: none; opacity: 0; }
     .union-fan-scrim, .union-fan-close, .pay-modepill, .pay-qrcard, .pay-receipt, .pay-conf, .pay-conf .tick, .pay-gpanel { animation: none; }
+    .screen-enter, .screen-fade, .cascade-in, .toast, .toast.toast-out,
+    .bottom-bar-btn.tab-pop .bottom-bar-lucide, .bottom-bar-btn.tab-pop .bottom-bar-label,
+    .modal-overlay, .modal-overlay > .modal { animation: none; }
+    .tab-bar.thumb-animate::before { transition: none; }
 }
 
 /* Sponsored guest sign-up (one tap, email as fallback) */

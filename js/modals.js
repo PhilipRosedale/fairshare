@@ -373,6 +373,7 @@ function closeModal(_options = {}) {
     vouchWithContactName = '';
     if (typeof _pendingReportTarget !== 'undefined') _pendingReportTarget = null;
     stopSuggestPicStream();
+    playModalCloseGhost(document.getElementById('modalOverlay'));
     document.getElementById('modalOverlay').classList.add('hidden');
     document.getElementById('modalBody').classList.remove('modal-wide');
     document.getElementById('modalBody').classList.remove('share-modal');

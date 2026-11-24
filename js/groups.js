@@ -55,6 +55,8 @@ function renderGroupCardLogo(logoUrl, groupName, logoUpdatedAt) {
     return '<div class="group-card-logo-placeholder" aria-hidden="true"><i data-lucide="users-round" aria-hidden="true"></i></div>';
 }
 
+let _groupListCascadeStart = 0;
+
 function renderGroupList() {
     const el = document.getElementById('groupList');
     const hint = document.getElementById('groupsEmptyHint');
@@ -86,6 +88,11 @@ function renderGroupList() {
     `;
     }).join('');
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+    // First time the list is actually on screen, the cards cascade in.
+    if (el.offsetParent !== null) {
+        if (!_groupListCascadeStart) _groupListCascadeStart = performance.now();
+        playListCascade(el, '.group-card', _groupListCascadeStart);
+    }
 }
 
 async function leaveGroup(groupId, groupName, event) {
@@ -154,8 +161,13 @@ function selectGroupById(groupId) {
 
 async function selectGroup(group, membership) {
     selectedGroup = group;
+    const groupViewEl = document.getElementById('groupView');
+    const openingFromList = groupViewEl.classList.contains('hidden');
     document.getElementById('groupsScreen').classList.add('hidden');
-    document.getElementById('groupView').classList.remove('hidden');
+    groupViewEl.classList.remove('hidden');
+    // Opening a group from the list: the group view fades and rises in
+    // (not when it lands on chat, whose input bar is position:fixed).
+    if (openingFromList && activeTab !== 'chat') playEnterAnimation(groupViewEl, 'screen-enter');
 
     // Remember this group for next visit
     if (currentProfile?.last_group_id !== group.id) {
@@ -216,8 +228,11 @@ function showGroupsList() {
     }
     if (typeof resetChatLayoutStyles === 'function') resetChatLayoutStyles();
     if (typeof unbindChatViewportListeners === 'function') unbindChatViewportListeners();
-    document.getElementById('groupsScreen').classList.remove('hidden');
+    const groupsScreenEl = document.getElementById('groupsScreen');
+    const backFromGroup = groupsScreenEl.classList.contains('hidden');
+    groupsScreenEl.classList.remove('hidden');
     document.getElementById('groupView').classList.add('hidden');
+    if (backFromGroup) playEnterAnimation(groupsScreenEl, 'screen-enter');
     selectedGroup = null;
     setHeaderAvatar(currentProfile?.profile_image_url || null);
     // Unsubscribe from realtime when leaving a group

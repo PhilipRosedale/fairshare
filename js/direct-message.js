@@ -1,5 +1,15 @@
 const DM_PAGE_SIZE = 25;
 const DM_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+// A message about an offering: "🏷offering:<id>" on the first line, then the
+// text. Anyone who can see an offering can message its poster this way, even
+// without being contacts (sql/offering-messages.sql).
+const DM_OFFERING_PREFIX = '🏷offering:';
+const DM_OFFERING_PATTERN = /^🏷offering:([0-9a-f-]{36})(?:\n([\s\S]*))?$/;
+const DM_BODY_MAX = 2000;
+
+// The offering attached to the next message: { userId, offeringId }.
+let directMessagePendingOffering = null;
+const directMessageOfferingCache = new Map();  // offering id -> row, or null when gone
 
 let directMessageChannel = null;
 let directMessageReactionChannel = null;
@@ -63,15 +73,35 @@ function openDirectMessageScreen(contactId) {
     navigateTo('directMessage', contactId);
 }
 
+function isDirectMessageContact(userId) {
+    return !!userId && (contactsLoadedRows || []).some((r) => r.contact?.contact_id === userId);
+}
+
+// Back goes where the conversation was opened. Someone who isn't a contact
+// has no details screen, so their conversations go back to the Map instead.
 function closeDirectMessageScreen() {
     hideDirectMessageReactionMenu();
     stopDirectMessageTyping();
     const backId = activeDirectMessageContactId;
+    const returnView = directMessageReturnView;
     activeDirectMessageContactId = null;
     activeDirectMessageProfile = null;
     activeDirectMessageConversationKey = null;
-    if (backId) navigateTo('contactDetails', backId);
-    else navigateTo('contacts');
+    const isContact = isDirectMessageContact(backId);
+    if (backId && isContact && (!returnView || returnView === 'contactDetails')) {
+        navigateTo('contactDetails', backId);
+    } else if (returnView && returnView !== 'contactDetails' && returnView !== 'directMessage') {
+        navigateTo(returnView);
+    } else {
+        navigateTo(isContact ? 'contacts' : 'map');
+    }
+}
+
+/** Message button on an offering: open the conversation with the offering attached. */
+function openDirectMessageAboutOffering(userId, offeringId) {
+    if (!userId || !offeringId) return;
+    directMessagePendingOffering = { userId, offeringId };
+    navigateTo('directMessage', userId);
 }
 
 async function renderDirectMessageScreen(contactId) {
@@ -99,6 +129,7 @@ async function renderDirectMessageScreen(contactId) {
                     <p style="color:var(--dark-gray);text-align:center;padding:2rem 0;">Loading…</p>
                 </div>
                 <div class="dm-typing-indicator" id="dmTypingIndicator" hidden>${esc(displayName)} is typing…</div>
+                <div class="dm-attach hidden" id="dmAttach"></div>
                 <div class="chat-input-bar dm-input-bar">
                     <input type="text" id="dmInput" placeholder="Type a message…" maxlength="2000"
                            oninput="onDirectMessageInputChange()"
@@ -118,6 +149,11 @@ async function renderDirectMessageScreen(contactId) {
     `;
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
 
+    if (directMessagePendingOffering && directMessagePendingOffering.userId !== contactId) {
+        directMessagePendingOffering = null;
+    }
+    renderDirectMessageAttachment();
+
     await buildDirectMessageProfileCache(contactId);
 
     const msgsEl = document.getElementById('dmMessages');
@@ -133,7 +169,169 @@ async function loadDirectMessageProfile(contactId) {
         .select('id, display_name, profile_image_url')
         .eq('id', contactId)
         .maybeSingle();
-    return data || null;
+    if (data) return data;
+    // Not a contact or group peer (their profile isn't readable): use what
+    // their offering or the conversations list already told us.
+    const offering = typeof offeringsCache !== 'undefined'
+        ? (offeringsCache || []).find((o) => o.user_id === contactId) : null;
+    if (offering) return { id: contactId, display_name: offering.poster_name, profile_image_url: offering.poster_photo || null };
+    const thread = otherConversationsCache.find((t) => t.peer_id === contactId);
+    if (thread) return { id: contactId, display_name: thread.display_name, profile_image_url: thread.profile_image_url || null };
+    return null;
+}
+
+// ---- Messages about offerings ------------------------------------------------
+
+function parseOfferingMessageBody(body) {
+    const m = String(body || '').match(DM_OFFERING_PATTERN);
+    return m ? { offeringId: m[1], text: (m[2] || '').trim() } : null;
+}
+
+/** Short text for a toast or list: photos, locations and offerings in words. */
+function directMessagePreviewText(body) {
+    const text = String(body || '');
+    if (text.startsWith('📷image:')) return '📷 Photo';
+    if (text.startsWith('📍location:')) return '📍 Location';
+    const offering = parseOfferingMessageBody(text);
+    if (offering) return offering.text || 'Asked about an offering';
+    return text;
+}
+
+/** The offering a message is about: from the Map's data, or read once from the database. */
+async function getDirectMessageOffering(offeringId) {
+    const known = typeof getOffering === 'function' ? getOffering(offeringId) : null;
+    if (known) return known;
+    if (directMessageOfferingCache.has(offeringId)) return directMessageOfferingCache.get(offeringId);
+    let row = null;
+    try {
+        const { data } = await db.from('offerings')
+            .select('id, user_id, kind, kinds, description, photo_url, place_label, price, price_unit, starts_at, closed_at, expires_at')
+            .eq('id', offeringId)
+            .maybeSingle();
+        row = data || null;
+    } catch (_) { row = null; }
+    directMessageOfferingCache.set(offeringId, row);
+    return row;
+}
+
+function directMessageOfferingOpen(o) {
+    return !!o && !o.closed_at && (!o.expires_at || new Date(o.expires_at) > new Date());
+}
+
+async function renderDirectMessageOfferingCard(wrap, offeringId) {
+    const o = await getDirectMessageOffering(offeringId);
+    if (!o || typeof OFFERING_KINDS === 'undefined') {
+        wrap.innerHTML = '<div class="dm-offer-card gone"><span class="dm-offer-gone">This offering is no longer available</span></div>';
+        return;
+    }
+    const open = directMessageOfferingOpen(o);
+    const kind = getOfferingKindLabels(o);
+    const meta = open
+        ? (o.currency_name !== undefined ? `${kind} · ${getOfferingPriceLine(o)}` : kind)
+        : `${kind} · No longer available`;
+    wrap.innerHTML = `
+        <button type="button" class="dm-offer-card${open ? '' : ' closed'}" data-offering-id="${escOfferAttr(o.id)}">
+            ${offeringThumbHtml(o, 'dm-offer-thumb')}
+            <span class="dm-offer-info">
+                <span class="dm-offer-title">${esc(getOfferingTitle(o))}</span>
+                <span class="dm-offer-meta">${esc(meta)}</span>
+            </span>
+        </button>`;
+    const btn = wrap.querySelector('.dm-offer-card');
+    if (btn) {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Show it on the Map when it's still there for you to see.
+            if (typeof getOffering === 'function' && getOffering(o.id)) mapHomeShowOffering(o.id);
+            else if (!open) showToast('This offering is no longer available', 'info');
+        });
+    }
+}
+
+/** The "About: …" strip above the input while an offering is attached. */
+async function renderDirectMessageAttachment() {
+    const el = document.getElementById('dmAttach');
+    const input = document.getElementById('dmInput');
+    if (!el) return;
+    const pending = directMessagePendingOffering;
+    if (!pending || pending.userId !== activeDirectMessageContactId) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        if (input) input.placeholder = 'Type a message…';
+        return;
+    }
+    const o = await getDirectMessageOffering(pending.offeringId);
+    if (directMessagePendingOffering !== pending) return;
+    if (!o) {
+        directMessagePendingOffering = null;
+        renderDirectMessageAttachment();
+        return;
+    }
+    el.innerHTML = `
+        ${offeringThumbHtml(o, 'dm-attach-thumb')}
+        <span class="dm-attach-text"><small>About</small>${esc(getOfferingTitle(o))}</span>
+        <button type="button" class="dm-attach-remove" onclick="removeDirectMessageAttachment()" aria-label="Don't attach this offering"><i data-lucide="x" aria-hidden="true"></i></button>`;
+    el.classList.remove('hidden');
+    if (input) input.placeholder = getOfferingKinds(o).includes('gather') ? 'Ask about it, or say you’re coming…' : 'Ask about it…';
+    if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+function removeDirectMessageAttachment() {
+    directMessagePendingOffering = null;
+    renderDirectMessageAttachment();
+}
+
+// ---- Conversations with people who aren't contacts ----------------------------
+
+let otherConversationsCache = [];
+
+/** List them at the top of Contacts, so an offering's poster can find and answer them. */
+async function refreshOtherConversations() {
+    const el = document.getElementById('otherConversations');
+    if (!el || !currentUser) return;
+    try {
+        const { data, error } = await db.rpc('dm_other_threads');
+        if (error) throw error;
+        otherConversationsCache = (data || []).filter((t) => typeof isUserBlocked !== 'function' || !isUserBlocked(t.peer_id));
+    } catch (e) {
+        console.warn('[dm] could not load other conversations:', e);
+        return;
+    }
+    renderOtherConversations();
+}
+
+function renderOtherConversations() {
+    const el = document.getElementById('otherConversations');
+    if (!el) return;
+    const threads = otherConversationsCache;
+    if (!threads.length) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = `
+        <div class="other-convos-label">Messages from people who aren't your contacts</div>
+        ${threads.map((t) => {
+            const name = t.display_name || 'Someone';
+            const initial = (name.trim()[0] || '?').toUpperCase();
+            const avatar = t.profile_image_url
+                ? `<img class="other-convo-avatar" src="${escOfferAttr(t.profile_image_url)}" alt="">`
+                : `<span class="other-convo-avatar other-convo-initial" style="background:${typeof getMapHomeColor === 'function' ? getMapHomeColor(t.peer_id) : '#5b8def'}">${esc(initial)}</span>`;
+            const offering = t.offering_id && typeof getOffering === 'function' ? getOffering(t.offering_id) : null;
+            const about = offering ? `About ${getOfferingTitle(offering)}` : (t.offering_id ? 'About an offering' : '');
+            const last = (t.last_from_me ? 'You: ' : '') + directMessagePreviewText(t.last_body);
+            const when = typeof formatLastSeen === 'function' ? formatLastSeen(t.last_at).replace(/ ago$/, '') : '';
+            return `
+            <button type="button" class="other-convo" data-peer="${escOfferAttr(t.peer_id)}" onclick="navigateTo('directMessage', this.dataset.peer)">
+                ${avatar}
+                <span class="other-convo-text">
+                    <span class="other-convo-top"><b>${esc(name)}</b><small>${esc(when)}</small></span>
+                    ${about ? `<span class="other-convo-about">${esc(about)}</span>` : ''}
+                    <span class="other-convo-last">${esc(last)}</span>
+                </span>
+            </button>`;
+        }).join('')}`;
+    el.classList.remove('hidden');
 }
 
 async function buildDirectMessageProfileCache(contactId) {
@@ -214,8 +412,10 @@ async function createDirectMessageElement(msg) {
     const senderId = msg.from_user_id;
     const loc = parseLocationBody(msg.body);
     const img = parseImageBody(msg.body);
+    const offer = !img && !loc ? parseOfferingMessageBody(msg.body) : null;
     const bubbleContent = img ? '<div class="chat-image-wrap"></div>'
         : loc ? '<div class="chat-location-wrap"></div>'
+        : offer ? `<div class="dm-offer-wrap"></div>${offer.text ? `<div class="dm-offer-text">${esc(offer.text)}</div>` : ''}`
         : esc(msg.body);
     const time = formatDirectMessageTime(msg.created_at);
     const reportBtnHtml = !isMine
@@ -256,6 +456,10 @@ async function createDirectMessageElement(msg) {
         if (bubble) bubble.classList.add('chat-bubble-location');
         const wrap = div.querySelector('.chat-location-wrap');
         if (wrap) renderLocationPreview(wrap, loc.lat, loc.lng, loc.radius);
+    } else if (offer) {
+        if (bubble) bubble.classList.add('chat-bubble-offer');
+        const wrap = div.querySelector('.dm-offer-wrap');
+        if (wrap) await renderDirectMessageOfferingCard(wrap, offer.offeringId);
     }
     return div;
 }
@@ -299,8 +503,17 @@ function scrollDirectMessagesToBottom() {
 async function sendDirectMessage() {
     const input = document.getElementById('dmInput');
     if (!input || !activeDirectMessageContactId || !currentUser) return;
-    const body = input.value.trim();
-    if (!body) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    // The first message about an offering carries it, as a card above the text.
+    const pending = directMessagePendingOffering && directMessagePendingOffering.userId === activeDirectMessageContactId
+        ? directMessagePendingOffering : null;
+    let body = text;
+    if (pending) {
+        const prefix = `${DM_OFFERING_PREFIX}${pending.offeringId}\n`;
+        body = prefix + text.slice(0, DM_BODY_MAX - prefix.length);
+    }
 
     input.disabled = true;
     const { data: msg, error } = await db.from('direct_messages').insert({
@@ -312,10 +525,19 @@ async function sendDirectMessage() {
     input.disabled = false;
 
     if (error) {
-        showToast('Failed to send message: ' + error.message, 'error');
+        // The database says no when you may not message this person (not a
+        // contact, and no open offering of theirs you can see).
+        const blockedByRule = /row-level security/i.test(error.message || '');
+        showToast(blockedByRule
+            ? "You can't message this person right now. Their offering may have ended."
+            : 'Failed to send message: ' + error.message, 'error');
         return;
     }
     input.value = '';
+    if (pending) {
+        directMessagePendingOffering = null;
+        renderDirectMessageAttachment();
+    }
     stopDirectMessageTyping();
     if (msg) appendDirectMessage(msg, true);
 }
@@ -604,13 +826,19 @@ function subscribeToDirectMessages() {
 
             const isOpenHere = activeMainView === 'directMessage'
                 && activeDirectMessageContactId === msg.from_user_id;
+            if (activeMainView === 'contacts' && !isDirectMessageContact(msg.from_user_id)) {
+                refreshOtherConversations();
+            }
             if (isOpenHere) {
                 appendDirectMessage(msg);
                 return;
             }
             const name = await getDisplayName(msg.from_user_id);
-            const preview = msg.body.length > 80 ? msg.body.slice(0, 80) + '…' : msg.body;
-            showToast(`💬 ${name}: ${preview}`, 'info');
+            const text = directMessagePreviewText(msg.body);
+            const preview = text.length > 80 ? text.slice(0, 80) + '…' : text;
+            showToast(parseOfferingMessageBody(msg.body)
+                ? `💬 ${name} asked about your offering: ${preview}`
+                : `💬 ${name}: ${preview}`, 'info');
         })
         .subscribe();
 }
@@ -619,7 +847,12 @@ async function openPendingDirectMessageIfAny() {
     if (!pendingOpenDmContactId) return;
     const cid = pendingOpenDmContactId;
     pendingOpenDmContactId = null;
-    if (typeof openContactDetailsById === 'function') {
+    // A contact's conversation sits on top of their details, so Back goes
+    // there. Someone who messaged about an offering has no details screen.
+    if ((!contactsLoadedRows || !contactsLoadedRows.length) && typeof loadAndRenderContactList === 'function') {
+        try { await loadAndRenderContactList(); } catch (_) {}
+    }
+    if (isDirectMessageContact(cid) && typeof openContactDetailsById === 'function') {
         await openContactDetailsById(cid);
     }
     openDirectMessageScreen(cid);
@@ -666,8 +899,9 @@ function openDirectMessageMapPicker() {
         attributionControl: false
     }).setView([0, 0], 2);
     L.tileLayer(APP_MAP.TILE_URL, {
-        maxZoom: 20,
-        subdomains: 'abcd'
+        maxZoom: APP_MAP.MAX_ZOOM,
+        maxNativeZoom: APP_MAP.MAX_NATIVE_ZOOM,
+        subdomains: APP_MAP.TILE_SUBDOMAINS
     }).addTo(map);
 
     let currentLat = null;

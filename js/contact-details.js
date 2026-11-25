@@ -74,7 +74,7 @@ function renderCdSkeleton(seed) {
         <div class="cd-back-row">
             <button class="cd-back-link" type="button" onclick="closeContactDetailsScreen()">
                 <i data-lucide="chevron-left" aria-hidden="true"></i>
-                Contacts
+                ${esc(cdBackLabel())}
             </button>
             <span class="cd-last-seen">&nbsp;</span>
         </div>
@@ -150,7 +150,7 @@ function renderContactDetailsScreen(root, row) {
         <div class="cd-back-row">
             <button class="cd-back-link" type="button" onclick="closeContactDetailsScreen()">
                 <i data-lucide="chevron-left" aria-hidden="true"></i>
-                Contacts
+                ${esc(cdBackLabel())}
             </button>
             <span class="cd-last-seen">${lastSeen ? 'Last met ' + esc(lastSeen) : ''}</span>
         </div>
@@ -1183,10 +1183,16 @@ function cdHaptic() {
 
 // ----- Close / back ----------------------------------------------------------
 
+function cdBackLabel() {
+    if (contactDetailsReturnView === 'map') return 'Map';
+    if (contactDetailsReturnView === 'feed') return 'Feed';
+    return 'Contacts';
+}
+
 function closeContactDetailsScreen() {
     cdCurrentContactId = null;
     if (cdConfettiTimer) { clearTimeout(cdConfettiTimer); cdConfettiTimer = null; }
-    navigateTo('contacts');
+    navigateTo(contactDetailsReturnView || 'contacts');
 }
 
 function cdCopyContactEmailFromBtn(btn) {

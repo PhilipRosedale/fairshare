@@ -3,11 +3,12 @@
 // calls in js/pay-api.js, design in docs/payment-codes.md.
 //
 // Shape of the flow:
-//   Union button -> fan (Pay / Request / Connect)
+//   Union button -> fan (Offer / Pay / Request / Connect)
 //   Pay or Request -> compose: live camera on top, OR, amount + keypad, group chip
 //     - type an amount and press the button -> your code, held up -> ends when it settles
 //     - or the camera sees someone else's code -> confirm (for a bill) -> ends
 //   Connect -> the existing Meet screen.
+//   Offer -> the Offer screen in js/offerings.js.
 
 let payState = {
     view: null,          // 'compose' | 'code' | 'confirm' | 'done'
@@ -116,6 +117,7 @@ function closeUnionFan(instant) {
 function unionFanPick(what) {
     payHaptic('pick');
     if (what === 'connect') { closeUnionFan(true); openMeetScreen(); return; }
+    if (what === 'offer') { closeUnionFan(true); openOfferFlow(); return; }
     openPayCompose(what);
 }
 

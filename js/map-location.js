@@ -92,8 +92,9 @@ function openMapPicker() {
     }).setView([0, 0], 2);
 
     L.tileLayer(APP_MAP.TILE_URL, {
-        maxZoom: 20,
-        subdomains: 'abcd'
+        maxZoom: APP_MAP.MAX_ZOOM,
+        maxNativeZoom: APP_MAP.MAX_NATIVE_ZOOM,
+        subdomains: APP_MAP.TILE_SUBDOMAINS
     }).addTo(map);
 
     let currentLat = null;
@@ -265,6 +266,7 @@ function renderLocationPreview(container, lat, lng, radius) {
 
         L.tileLayer(APP_MAP.TILE_URL, {
             maxZoom: APP_MAP.MAX_ZOOM,
+            maxNativeZoom: APP_MAP.MAX_NATIVE_ZOOM,
             subdomains: APP_MAP.TILE_SUBDOMAINS
         }).addTo(previewMap);
 

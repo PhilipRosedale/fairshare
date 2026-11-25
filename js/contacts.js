@@ -1732,13 +1732,15 @@ async function openNewContactSelfieOverlay(contactId, contactName) {
 }
 
 // Chat and other features open the same overlay with a custom Use handler.
-async function openCameraOverlay({ banner, context, onUse }) {
+// facingMode 'environment' starts on the rear camera (offerings photograph
+// things, not people); the flip button still switches.
+async function openCameraOverlay({ banner, context, onUse, facingMode }) {
     cameraOverlayMode = 'chatPhoto';
     cameraOverlayContext = context || null;
     cameraOverlayOnUse = typeof onUse === 'function' ? onUse : null;
     contactSelfieId = null;
     newContactSelfieId = null;
-    await _openCameraOverlay(banner || 'Send a photo');
+    await _openCameraOverlay(banner || 'Send a photo', facingMode === 'environment' ? 'environment' : 'user');
 }
 
 function _resetSelfieOverlayUi() {
@@ -1801,18 +1803,18 @@ function _showSelfieReviewUi(canvas) {
     _updateCameraMirrorClasses();
 }
 
-async function _openCameraOverlay(bannerText) {
+async function _openCameraOverlay(bannerText, facingMode = 'user') {
     const overlay = document.getElementById('newContactSelfieOverlay');
     const banner = document.getElementById('newContactSelfieBanner');
     const video = document.getElementById('newContactSelfieVideo');
     if (!overlay || !video) return;
     if (banner) banner.textContent = bannerText;
-    cameraFacingMode = 'user';
+    cameraFacingMode = facingMode;
     _resetSelfieOverlayUi();
     overlay.classList.remove('hidden');
     if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
     try {
-        await _startSelfieCamera('user');
+        await _startSelfieCamera(facingMode);
         if (cameraOverlayMode === 'contactSelfie') {
             await unlockNativeOrientationForSelfiePreview();
         }

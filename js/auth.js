@@ -580,10 +580,15 @@ async function showApp(navigateToGroupId) {
         }
         if (resumeDmContactId) {
             navigateTo('directMessage', resumeDmContactId);
+            directMessageReturnView = 'contactDetails';
         } else if (resumeContactId) {
             navigateTo('contactDetails', resumeContactId);
         } else {
-            navigateTo('contacts');
+            navigateTo('map');
+            // The contact list used to load here because Contacts was the first
+            // screen. Nearby alerts, Connect, sharing and push handling all read
+            // it, so keep loading it in the background.
+            loadAndRenderContactList().catch(e => console.warn('background contact load failed:', e));
         }
     }
 

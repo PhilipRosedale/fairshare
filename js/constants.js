@@ -46,6 +46,9 @@ const APP_MAP = Object.freeze({
     TILE_URL: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_4c3c_1_cc4e7e047c9f0603e396c06d',
     TILE_SUBDOMAINS: 'abcd',
     MAX_ZOOM: 20,
+    // Carto only serves tiles up to zoom 18 (19 and 20 come back 403), so
+    // above that Leaflet enlarges the zoom-18 tiles instead of showing gray.
+    MAX_NATIVE_ZOOM: 18,
     CONTACT_LOCATION_MINI_ZOOM: 14,
     CONTACT_LOCATION_FULLSCREEN_ZOOM: 15,
     LOCATION_PREVIEW_ZOOM: 15

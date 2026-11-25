@@ -226,8 +226,24 @@
 <div id="appScreen" class="hidden">
     <div class="main-content">
 
-        <!-- ===== CONTACTS VIEW (default) ===== -->
-        <div id="contactsScreen">
+        <!-- ===== MAP VIEW (default home) ===== -->
+        <!-- Full-screen map between the header and the bottom bar (js/map-home.js). -->
+        <div id="mapScreen" class="hidden">
+            <div id="mapHomeMap" class="map-home-map" aria-label="Map of people sharing their location with you, and offerings"></div>
+            <div class="map-home-chips offer-chips" data-offering-filter role="group" aria-label="Show"></div>
+            <div id="mapHomeHint" class="map-home-hint hidden" role="status"></div>
+            <button type="button" id="mapHomeLocateBtn" class="map-home-locate" onclick="mapHomeLocateMe()" aria-label="Show where I am" title="Show where I am"><i data-lucide="locate-fixed" aria-hidden="true"></i></button>
+            <div id="mapHomeCard" class="map-home-card hidden" role="dialog" aria-live="polite"></div>
+        </div>
+
+        <!-- ===== FEED VIEW ===== -->
+        <!-- Same things as the map, newest first (js/feed.js). -->
+        <div id="feedScreen" class="hidden"><div class="feed-chips offer-chips" data-offering-filter role="group" aria-label="Show"></div>
+            <div id="feedContent"></div>
+        </div>
+
+        <!-- ===== CONTACTS VIEW ===== -->
+        <div id="contactsScreen" class="hidden">
             <div class="contacts-toolbar">
                 <div class="contacts-search-wrap">
                     <i class="contacts-search-icon" data-lucide="search" aria-hidden="true"></i>
@@ -267,6 +283,8 @@
                     </div>
                 </div>
             </div>
+            <!-- Conversations with people who aren't contacts (about offerings) -->
+            <section id="otherConversations" class="other-convos hidden" aria-label="Messages from people who aren't your contacts"></section>
             <div class="contacts-list-wrap">
                 <div id="contactsListContent">
                     <p style="color:var(--dark-gray);text-align:center;padding:2rem;">Loading…</p>
@@ -371,12 +389,20 @@
 
     <!-- ===== BOTTOM BAR ===== -->
     <div class="bottom-bar" id="bottomBar">
-        <button type="button" class="bottom-bar-btn active" data-view="contacts" onclick="navigateTo('contacts')" aria-label="Contacts">
-            <i class="bottom-bar-lucide" data-lucide="user-round" aria-hidden="true"></i>
-            <span class="bottom-bar-label">Contacts</span>
+        <button type="button" class="bottom-bar-btn active" data-view="map" onclick="navigateTo('map')" aria-label="Map">
+            <i class="bottom-bar-lucide" data-lucide="map" aria-hidden="true"></i>
+            <span class="bottom-bar-label">Map</span>
+        </button>
+        <button type="button" class="bottom-bar-btn" data-view="feed" onclick="navigateTo('feed')" aria-label="Feed">
+            <i class="bottom-bar-lucide" data-lucide="newspaper" aria-hidden="true"></i>
+            <span class="bottom-bar-label">Feed</span>
         </button>
         <button type="button" class="bottom-bar-btn bottom-bar-btn-center" id="unionButton" onclick="openUnionFan()" aria-label="Union" aria-haspopup="menu" aria-controls="unionFan">
             <span class="bottom-bar-handshake"><i data-lucide="heart-handshake" aria-hidden="true"></i></span>
+        </button>
+        <button type="button" class="bottom-bar-btn" data-view="contacts" onclick="navigateTo('contacts')" aria-label="Contacts">
+            <i class="bottom-bar-lucide" data-lucide="user-round" aria-hidden="true"></i>
+            <span class="bottom-bar-label">Contacts</span>
         </button>
         <button type="button" class="bottom-bar-btn" data-view="groups" onclick="navigateTo('groups')" aria-label="Groups">
             <i class="bottom-bar-lucide" data-lucide="users-round" aria-hidden="true"></i>
@@ -403,25 +429,34 @@
 </div>
 
 <!-- ===== MEET / QR CONTACT EXCHANGE OVERLAY ===== -->
-<!-- ===== UNION FAN (Pay / Request / Connect) ===== -->
+<!-- ===== UNION FAN (Offer / Pay / Request / Connect) ===== -->
+<!-- Four equal bubbles in a cross around Connect: Offer on top, Pay and
+     Request at the sides, the Union button (close) below. -->
 <div id="unionFan" class="union-fan hidden" aria-hidden="true">
     <div class="union-fan-scrim" onclick="closeUnionFan()"></div>
     <div class="union-fan-items" role="menu" aria-label="Union actions">
-        <div class="ufi" style="--tx:-96px;--ty:-116px;--d:0ms">
+        <div class="ufi" style="--tx:-116px;--ty:-116px;--d:0ms">
             <button type="button" class="ubub pay" role="menuitem" aria-label="Pay" onclick="unionFanPick('pay')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
             <span class="ulab" aria-hidden="true">Pay</span>
         </div>
-        <div class="ufi" style="--tx:96px;--ty:-116px;--d:35ms">
+        <div class="ufi" style="--tx:116px;--ty:-116px;--d:35ms">
             <button type="button" class="ubub req" role="menuitem" aria-label="Request" onclick="unionFanPick('request')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
             <span class="ulab" aria-hidden="true">Request</span>
         </div>
-        <div class="ufi small" style="--tx:0px;--ty:-212px;--d:90ms">
+        <div class="ufi" style="--tx:0px;--ty:-116px;--d:60ms">
             <button type="button" class="ubub con" role="menuitem" aria-label="Connect" onclick="unionFanPick('connect')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.5-3 2.8-4.6 5.5-4.6s5 1.6 5.5 4.6"/><path d="M18 8v6M15 11h6"/></svg></button>
             <span class="ulab" aria-hidden="true">Connect</span>
+        </div>
+        <div class="ufi" style="--tx:0px;--ty:-232px;--d:90ms">
+            <button type="button" class="ubub offer" role="menuitem" aria-label="Offer" onclick="unionFanPick('offer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+            <span class="ulab" aria-hidden="true">Offer</span>
         </div>
     </div>
     <button type="button" class="union-fan-close" onclick="closeUnionFan()" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
 </div>
+
+<!-- ===== OFFER (new offering / edit), filled by js/offerings.js ===== -->
+<div id="offerScreen" class="offer-screen hidden" role="dialog" aria-modal="true" aria-labelledby="offerTitle" aria-hidden="true"></div>
 
 <!-- ===== PAY / REQUEST FLOW ===== -->
 <div id="payOverlay" class="pay-overlay hidden">
@@ -586,6 +621,9 @@
 <script src="js/nearby.js"></script>
 <script src="js/location-sharing.js"></script>
 <script src="js/contacts.js"></script>
+<script src="js/offerings.js"></script>
+<script src="js/map-home.js"></script>
+<script src="js/feed.js"></script>
 <script src="js/chat-images.js"></script>
     <script src="js/contact-details.js"></script>
     <script src="js/contact-intro.js"></script>

@@ -132,7 +132,15 @@ function navigateTo(view, arg) {
     const contactDetailsScreen = document.getElementById('contactDetailsScreen');
     const directMessageScreen = document.getElementById('directMessageScreen');
     const globeScreen = document.getElementById('globeScreen');
+    const mapScreen = document.getElementById('mapScreen');
+    const feedScreen = document.getElementById('feedScreen');
 
+    if (view !== 'map') {
+        document.body.classList.remove('map-screen-active');
+        if (typeof onMapHomeHidden === 'function') onMapHomeHidden();
+    }
+    if (mapScreen) mapScreen.classList.add('hidden');
+    if (feedScreen) feedScreen.classList.add('hidden');
     contactsScreen.classList.add('hidden');
     groupsContent.classList.add('hidden');
     profileScreen.classList.add('hidden');
@@ -141,6 +149,21 @@ function navigateTo(view, arg) {
     if (globeScreen) globeScreen.classList.add('hidden');
 
     switch (view) {
+        case 'map':
+            if (mapScreen) {
+                mapScreen.classList.remove('hidden');
+                document.body.classList.add('map-screen-active');
+                window.scrollTo(0, 0);
+                if (typeof openMapHome === 'function') openMapHome();
+            }
+            break;
+        case 'feed':
+            if (feedScreen) {
+                feedScreen.classList.remove('hidden');
+                window.scrollTo(0, 0);
+                if (typeof openFeed === 'function') openFeed();
+            }
+            break;
         case 'contacts': {
             contactsScreen.classList.remove('hidden');
             bindContactsSearchInput();
@@ -155,6 +178,7 @@ function navigateTo(view, arg) {
             if (p && typeof p.then === 'function') {
                 p.then(() => window.scrollTo(0, targetY)).catch(() => {});
             }
+            if (typeof refreshOtherConversations === 'function') refreshOtherConversations();
             break;
         }
         case 'groups':
@@ -169,6 +193,12 @@ function navigateTo(view, arg) {
             renderProfileScreen();
             break;
         case 'contactDetails':
+            // Coming back from a DM keeps the earlier origin.
+            if (previousMainView === 'map' || previousMainView === 'feed') {
+                contactDetailsReturnView = previousMainView;
+            } else if (previousMainView !== 'directMessage' && previousMainView !== 'contactDetails') {
+                contactDetailsReturnView = 'contacts';
+            }
             if (contactDetailsScreen) {
                 contactDetailsScreen.classList.remove('hidden');
                 openContactDetailsScreen(arg);
@@ -179,6 +209,12 @@ function navigateTo(view, arg) {
             }
             break;
         case 'directMessage':
+            // Back returns to where the conversation was opened (Map, Feed,
+            // Contacts or a contact's details); the bottom bar follows it.
+            if (previousMainView !== 'directMessage') directMessageReturnView = previousMainView;
+            if (previousMainView === 'map' || previousMainView === 'feed' || previousMainView === 'contacts') {
+                contactDetailsReturnView = previousMainView;
+            }
             if (directMessageScreen) {
                 directMessageScreen.classList.remove('hidden');
                 document.body.classList.add('dm-screen-active');
@@ -198,10 +234,10 @@ function navigateTo(view, arg) {
 
     updateBottomBarActive(view);
 
-    // Skip redundant contacts → contacts (e.g. showApp right after cold start when
-    // activeMainView is already 'contacts') so we do not wipe resume keys from
+    // Skip redundant map → map (e.g. showApp right after cold start when
+    // activeMainView is already 'map') so we do not wipe resume keys from
     // the previous session before readContactDetailResumeContactId runs.
-    if (!(view === 'contacts' && previousMainView === 'contacts')) {
+    if (!(view === previousMainView && (view === 'map' || view === 'contacts'))) {
         updateContactDetailResumeState(view, arg);
         updateDirectMessageResumeState(view, arg);
     }
@@ -211,7 +247,7 @@ function updateBottomBarActive(view) {
     document.querySelectorAll('.bottom-bar-btn[data-view]').forEach(btn => {
         // Contact Details is logically a child of the Contacts tab, so keep
         // the Contacts button highlighted while it's open.
-        const target = (view === 'contactDetails' || view === 'directMessage') ? 'contacts' : view;
+        const target = (view === 'contactDetails' || view === 'directMessage') ? (contactDetailsReturnView || 'contacts') : view;
         btn.classList.toggle('active', btn.dataset.view === target);
     });
 }

@@ -7,7 +7,11 @@ let contactSharesChannel = null; // Realtime for "X shared Y with you" toasts
 let contactEventsChannel = null; // Realtime for new contacts + selfie updates
 let contactNotificationsChannel = null; // Realtime for profile picture / met-date toasts
 let activeTab = 'money'; // Current tab: 'money', 'members', 'governance', 'commons', 'chat'
-let activeMainView = 'contacts'; // Current main view: 'contacts', 'groups', 'profile', 'contactDetails', 'directMessage', 'globe'
+let activeMainView = 'map'; // Current main view: 'map', 'feed', 'contacts', 'groups', 'profile', 'contactDetails', 'directMessage', 'globe'
+// Where Back on contact details goes: the Map or Feed when opened from there.
+let contactDetailsReturnView = 'contacts';
+// Where Back from a direct message goes: the screen it was opened from.
+let directMessageReturnView = null;
 let shareWithContactId = null;
 let shareWithContactName = '';
 let shareWithInitialPhone = false; // pre-checked state for shareChoice modal

@@ -869,6 +869,7 @@ function formatDistance(miles, options = {}) {
 function addContactLocationTileLayer(map) {
     return L.tileLayer(APP_MAP.TILE_URL, {
         maxZoom: APP_MAP.MAX_ZOOM,
+        maxNativeZoom: APP_MAP.MAX_NATIVE_ZOOM,
         subdomains: APP_MAP.TILE_SUBDOMAINS
     }).addTo(map);
 }

@@ -64,6 +64,7 @@ async function confirmBlockUser(contactId, displayName) {
         if (data?.error) throw new Error(data.error);
 
         blockedUserIds.add(contactId);
+        window.dispatchEvent(new CustomEvent('union:blockedUsersChanged'));
         showToast((displayName || 'User') + ' has been blocked.', 'success');
         closeModal();
 
@@ -89,6 +90,7 @@ async function unblockUserById(targetId, displayName) {
         if (data?.error) throw new Error(data.error);
 
         blockedUserIds.delete(targetId);
+        window.dispatchEvent(new CustomEvent('union:blockedUsersChanged'));
         showToast((displayName || 'User') + ' has been unblocked.', 'success');
         // Refresh the blocked-users list view if it's open.
         if (document.getElementById('blockedUsersList')) {

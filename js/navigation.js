@@ -234,8 +234,27 @@ function navigateTo(view, arg) {
 
     updateBottomBarActive(view);
 
-    // Skip redundant map → map (e.g. showApp right after cold start when
-    // activeMainView is already 'map') so we do not wipe resume keys from
+    // Screen-change microanimation: a short fade-and-rise on the incoming
+    // screen (the bottom bar icon pops in updateBottomBarActive).
+    if (previousMainView !== view) {
+        // The group chat and DM screens pin their input bars with
+        // position:fixed, so they are left alone. The globe and the Map only
+        // fade: moving a WebGL canvas or a live map costs more than it adds.
+        const chatWillShow = view === 'groups' && selectedGroup && activeTab === 'chat';
+        const enterEl = {
+            map: mapScreen,
+            feed: feedScreen,
+            contacts: contactsScreen,
+            groups: chatWillShow ? null : groupsContent,
+            profile: profileScreen,
+            contactDetails: contactDetailsScreen,
+            globe: globeScreen
+        }[view];
+        playEnterAnimation(enterEl, view === 'globe' || view === 'map' ? 'screen-fade' : 'screen-enter');
+    }
+
+    // Skip redundant map → map or contacts → contacts (e.g. showApp right after
+    // cold start when activeMainView is already that view) so we do not wipe resume keys from
     // the previous session before readContactDetailResumeContactId runs.
     if (!(view === previousMainView && (view === 'map' || view === 'contacts'))) {
         updateContactDetailResumeState(view, arg);
@@ -244,11 +263,15 @@ function navigateTo(view, arg) {
 }
 
 function updateBottomBarActive(view) {
+    // Contact Details and a direct message belong to the tab they were
+    // opened from (Map, Feed or Contacts), so keep that one highlighted.
+    const target = (view === 'contactDetails' || view === 'directMessage') ? (contactDetailsReturnView || 'contacts') : view;
     document.querySelectorAll('.bottom-bar-btn[data-view]').forEach(btn => {
-        // Contact Details is logically a child of the Contacts tab, so keep
-        // the Contacts button highlighted while it's open.
-        const target = (view === 'contactDetails' || view === 'directMessage') ? (contactDetailsReturnView || 'contacts') : view;
-        btn.classList.toggle('active', btn.dataset.view === target);
+        const isTarget = btn.dataset.view === target;
+        const wasActive = btn.classList.contains('active');
+        btn.classList.toggle('active', isTarget);
+        // Pop the icon only when the highlight actually moves to this tab.
+        if (isTarget && !wasActive) playEnterAnimation(btn, 'tab-pop');
     });
 }
 
